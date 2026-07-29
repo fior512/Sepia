@@ -25,10 +25,9 @@ Handles datasets from a few points to **billions** sub-second through built-in L
 git clone https://github.com/MoonFlowww/Sepia.git
 cd Sepia
 ```
+or
 
-## Building
-
-Sepia is Single-Header. Only need to copy-paste `sepia.hpp` into your project.
+You can copy-paste `sepia.hpp` into your project. Sepia is single-header.
 
 
 ## Quick Start
