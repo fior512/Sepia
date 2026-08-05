@@ -27,6 +27,36 @@ using u32   = std::uint32_t;
 using u64   = std::uint64_t;
 using usize = std::size_t;
 
+// ---------------------------------------------------------------------------
+// Public: Physical size (millimetres) + resolution (dots per millimetre)
+//
+//   PhysicalSize{190.0, 120.0}  →  190 mm wide, 120 mm tall
+//   Resolution{5.0}             →  5 dpmm  ≈ 127 DPI
+//   Resolution::from_dpi(96)    →  convenience: 96 DPI → 3.7795 dpmm
+//   Resolution::from_dpi(300)   →  300 DPI → 11.811 dpmm  (print quality)
+//
+// Pixel dimensions are derived:  pixels = round(mm * dpmm)
+// All internal spacing constants (margins, tick sizes, font scale …) are
+// multiplied by dpmm so the figure looks identical at any resolution.
+// ---------------------------------------------------------------------------
+struct PhysicalSize {
+  f64 width_mm  = 190.0;   ///< figure width  in millimetres
+  f64 height_mm = 120.0;   ///< figure height in millimetres
+};
+
+struct Resolution {
+  f64 dpmm = 3.7795;       ///< dots (pixels) per millimetre
+
+  /// Convenience: build from the more familiar DPI unit (dots per inch).
+  /// 1 inch = 25.4 mm, so  dpmm = dpi / 25.4
+  static constexpr Resolution from_dpi(f64 dpi) noexcept {
+    return Resolution{ dpi / 25.4 };
+  }
+
+  /// Round-trip helper: convert stored dpmm back to DPI for display/logging.
+  constexpr f64 to_dpi() const noexcept { return dpmm * 25.4; }
+};
+
 // --- detail: implementation plumbing, not part of the public API 
 namespace detail {
 
@@ -93,6 +123,13 @@ struct Rect {
   constexpr Rect() = default;
   constexpr Rect(f64 x, f64 y, f64 w, f64 h) : x(x), y(y), w(w), h(h) {}
 };
+
+
+static constexpr f64 BASELINE_DPMM = 4;
+
+inline f64 scale(f64 base_px, f64 dpmm) noexcept {
+  return base_px * (dpmm / BASELINE_DPMM);
+}
 
 } // NS detail
 
@@ -264,12 +301,38 @@ struct TextStyle {
   std::string font_face = "sans";
 };
 
+// ---------------------------------------------------------------------------
+// LayoutStyle — margins are expressed in MILLIMETRES.
+//
+// The previous version used raw pixel values which made figures look different
+// at different resolutions.  By storing mm values the rendering code converts
+// them to pixels at render-time using the figure's dpmm.
+//
+// Backward-compat note: if you were passing pixel values directly (e.g.
+// margin_left = 70) the visual result will be similar at 96 DPI (3.78 dpmm)
+// because 70 px / 3.78 =~ 18.5 mm, which rounds back to ~70 px at that same
+// resolution.  At higher DPI the margins will grow proportionally, which is
+// the correct physical behaviour.
+// ---------------------------------------------------------------------------
 struct LayoutStyle {
-  f64   margin_top    = 50.0;
-  f64   margin_bottom = 60.0;
-  f64   margin_left   = 70.0;
-  f64   margin_right  = 20.0;
-  Color background    = Color::white();
+  /// Margins in millimetres.  At 96 DPI (3.78 dpmm):
+  ///   top=13 mm -> ~50 px   bottom=16 mm -> ~60 px
+  ///   left=18.5 mm -> ~70 px   right=5.3 mm -> ~20 px
+  f64   margin_top_mm    = 13.2;   ///< was 50 px @ 96 DPI baseline
+  f64   margin_bottom_mm = 15.9;   ///< was 60 px
+  f64   margin_left_mm   = 18.5;   ///< was 70 px
+  f64   margin_right_mm  =  5.3;   ///< was 20 px
+  Color background       = Color::white();
+
+  // -----------------------------------------------------------------------
+  // Legacy pixel-based setters, kept for source-level compatibility.
+  // They accept pixel values and store them "as if at 96 DPI baseline" by
+  // dividing by BASELINE_DPMM, so the physical size stays consistent.
+  // -----------------------------------------------------------------------
+  void set_margin_top_px   (f64 px) { margin_top_mm    = px / detail::BASELINE_DPMM; }
+  void set_margin_bottom_px(f64 px) { margin_bottom_mm = px / detail::BASELINE_DPMM; }
+  void set_margin_left_px  (f64 px) { margin_left_mm   = px / detail::BASELINE_DPMM; }
+  void set_margin_right_px (f64 px) { margin_right_mm  = px / detail::BASELINE_DPMM; }
 };
 
 struct PerfParams {
@@ -533,16 +596,11 @@ private:
   }
 
   void draw_line_bresenham(f64 x0, f64 y0, f64 x1, f64 y1, Color c, f64 width) {
-    // Convert to integer coordinates (rounding)
     i32 x0i = static_cast<i32>(std::round(x0));
     i32 y0i = static_cast<i32>(std::round(y0));
     i32 x1i = static_cast<i32>(std::round(x1));
     i32 y1i = static_cast<i32>(std::round(y1));
 
-    // Width > 1 is more complex; for simplicity, we ignore width > 1 in this example
-    // (you could draw multiple parallel lines later)
-
-    // Bresenham algorithm
     bool steep = std::abs(y1i - y0i) > std::abs(x1i - x0i);
     if (steep) {
         std::swap(x0i, y0i);
@@ -570,7 +628,7 @@ private:
             err += dx;
         }
     }
-}
+  }
 
   static f64 fpart(f64 x)  { return x - std::floor(x); }
   static f64 rfpart(f64 x) { return 1.0 - fpart(x); }
@@ -982,12 +1040,59 @@ private:
   friend class Figure;
 };
 
+// ===========================================================================
+// Figure
+// ===========================================================================
 class Figure {
 public:
-  Figure(f64 width, f64 height) : 
-    canvas_(static_cast<u32>(width), static_cast<u32>(height)), 
-    fig_w_(width), fig_h_(height) 
+  // -------------------------------------------------------------------------
+  // Constructor B: physical size (mm) + resolution (dpmm).
+  //
+  //   Figure({190.0, 120.0}, {5.0})
+  //     → 190 mm wide, 120 mm tall at 5 dpmm = 950×600 pixels
+  //
+  //   Figure({210.0, 297.0}, Resolution::from_dpi(300))
+  //     → A4 page at 300 DPI = 2480×3508 pixels
+  //
+  // All spacing (margins, tick size, font scale, line widths, legend padding)
+  // is proportionally scaled so the figure looks identical at any resolution.
+  // -------------------------------------------------------------------------
+  Figure(PhysicalSize size, Resolution res = Resolution{})
+    : dpmm_(res.dpmm)
+    , phys_(size)
+    , canvas_(static_cast<u32>(std::round(size.width_mm  * res.dpmm)),
+              static_cast<u32>(std::round(size.height_mm * res.dpmm)))
+    , fig_w_(size.width_mm  * res.dpmm)
+    , fig_h_(size.height_mm * res.dpmm)
   {}
+
+  // -------------------------------------------------------------------------
+  // Constructor C: flat (width_mm, height_mm, dpmm) — most concise form.
+  //
+  //   Figure(200.0, 150.0, 4.0)
+  //     → 200 mm wide, 150 mm tall at 4 dpmm ≈ 102 DPI = 800×600 pixels
+  //
+  // The third argument defaults to BASELINE_DPMM (≈ 96 DPI) so that
+  //   Figure(185.3, 119.1)  behaves like the old  Figure(700, 450).
+  // -------------------------------------------------------------------------
+  Figure(f64 width_mm, f64 height_mm, f64 dpmm = detail::BASELINE_DPMM)
+    : dpmm_(dpmm)
+    , phys_{ width_mm, height_mm }
+    , canvas_(static_cast<u32>(std::round(width_mm  * dpmm)),
+              static_cast<u32>(std::round(height_mm * dpmm)))
+    , fig_w_(width_mm  * dpmm)
+    , fig_h_(height_mm * dpmm)
+  {}
+
+  // -------------------------------------------------------------------------
+  // Accessors: physical dimensions and resolution
+  // -------------------------------------------------------------------------
+  f64 width_mm()   const { return phys_.width_mm;  }
+  f64 height_mm()  const { return phys_.height_mm; }
+  f64 dpmm()       const { return dpmm_;            }
+  f64 dpi()        const { return dpmm_ * 25.4;     }
+  u32 width_px()   const { return canvas_.width();  }
+  u32 height_px()  const { return canvas_.height(); }
 
   void set_title(const std::string& t)  { title_  = t; }
   void set_xlabel(const std::string& l) { xlabel_ = l; }
@@ -1000,7 +1105,6 @@ public:
   void text(const params::TextStyle& t)     { text_style_   = t; }
   void perf(const params::PerfParams& p)    { perf_         = p; }
 
-  
   // LINE PLOTS
   inline PlotCommand plot(const f64* x, const f64* y, usize n) {
     return PlotCommand(*this, data::Series(x, y, n));
@@ -1038,12 +1142,32 @@ private:
 
   void add_entry(PlotEntry&& e) { entries_.push_back(std::move(e)); }
 
+  // ------------------------------------------------------------------
+  // sc(base_px) — scale a baseline-96DPI pixel value to current dpmm.
+  // Use for all hardcoded pixel constants: tick sizes, offsets, radii …
+  // ------------------------------------------------------------------
+  inline f64 sc(f64 base_px) const { return detail::scale(base_px, dpmm_); }
+
+  // Font scale: nearest integer ≥ 1 (bitmap font scales by integer steps).
+  // At 96 DPI (dpmm ≈ 3.78) → scale 1.  At 192 DPI → scale 2.  At 300 DPI → scale 3.
+  inline i32 font_scale(i32 base_scale = 1) const {
+    return std::max(1, static_cast<i32>(std::round(
+      base_scale * dpmm_ / detail::BASELINE_DPMM
+    )));
+  }
+
   void compute_plot_area() {
+    // Convert mm-based margins to pixels using current dpmm
+    f64 ml = layout_style_.margin_left_mm   * dpmm_;
+    f64 mt = layout_style_.margin_top_mm    * dpmm_;
+    f64 mr = layout_style_.margin_right_mm  * dpmm_;
+    f64 mb = layout_style_.margin_bottom_mm * dpmm_;
+
     plot_area_ = {
-      layout_style_.margin_left,
-      layout_style_.margin_top,
-      fig_w_ - layout_style_.margin_left - layout_style_.margin_right,
-      fig_h_ - layout_style_.margin_top  - layout_style_.margin_bottom
+      ml,
+      mt,
+      fig_w_ - ml - mr,
+      fig_h_ - mt  - mb
     };
   }
 
@@ -1061,7 +1185,6 @@ private:
         f64 log_lo = std::log10(data_bounds_.x_min);
         f64 log_hi = std::log10(data_bounds_.x_max);
         f64 pad = (log_hi - log_lo) * 0.05; if (pad == 0) pad = 0.15;
-
         data_bounds_.x_min = std::pow(10.0, log_lo - pad);
         data_bounds_.x_max = std::pow(10.0, log_hi + pad);
       } else {
@@ -1073,7 +1196,6 @@ private:
         f64 log_lo = std::log10(data_bounds_.y_min);
         f64 log_hi = std::log10(data_bounds_.y_max);
         f64 pad = (log_hi - log_lo) * 0.05; if (pad == 0) pad = 0.15;
-
         data_bounds_.y_min = std::pow(10.0, log_lo - pad);
         data_bounds_.y_max = std::pow(10.0, log_hi + pad);
       } else {
@@ -1091,48 +1213,37 @@ private:
     if (!grid_style_.show) return;
 
     auto xticks = rendering::TickEngine::compute(
-      data_bounds_.x_min, 
-      data_bounds_.x_max, 
-      8, 
-      grid_style_.show_minor, 
-      axis_style_.x_scale
-    );
-
+      data_bounds_.x_min, data_bounds_.x_max, 8,
+      grid_style_.show_minor, axis_style_.x_scale);
     auto yticks = rendering::TickEngine::compute(
-      data_bounds_.y_min, 
-      data_bounds_.y_max, 
-      6, 
-      grid_style_.show_minor, 
-      axis_style_.y_scale
-    );
-
+      data_bounds_.y_min, data_bounds_.y_max, 6,
+      grid_style_.show_minor, axis_style_.y_scale);
 
     for (auto& t : xticks) {
       f64 px = transform_.to_px_x(t.value);
       Color c  = t.is_minor ? grid_style_.minor_color : grid_style_.major_color;
       f64 w  = t.is_minor ? grid_style_.minor_width : grid_style_.major_width;
       f64 a  = t.is_minor ? grid_style_.minor_alpha : grid_style_.major_alpha;
-
       c = c.with_alpha(static_cast<u32>(a * 255));
-      canvas_.draw_line(px, plot_area_.y, px, plot_area_.y + plot_area_.h, c, w, false);
+      canvas_.draw_line(px, plot_area_.y, px, plot_area_.y + plot_area_.h,
+                        c, sc(w), false);
     }
-
 
     for (auto& t : yticks) {
       f64 py = transform_.to_px_y(t.value);
       Color c  = t.is_minor ? grid_style_.minor_color : grid_style_.major_color;
       f64 w  = t.is_minor ? grid_style_.minor_width : grid_style_.major_width;
       f64 a  = t.is_minor ? grid_style_.minor_alpha : grid_style_.major_alpha;
-
       c = c.with_alpha(static_cast<u32>(a * 255));
-      canvas_.draw_line(plot_area_.x, py, plot_area_.x + plot_area_.w, py, c, w, false);
+      canvas_.draw_line(plot_area_.x, py, plot_area_.x + plot_area_.w, py,
+                        c, sc(w), false);
     }
   }
 
   void render_axes() {
     if (!axis_style_.show) return;
     Color c = axis_style_.color;
-    f64 w = axis_style_.width;
+    f64 w = sc(axis_style_.width);
     f64 x0 = plot_area_.x, y0 = plot_area_.y;
     f64 x1 = x0 + plot_area_.w, y1 = y0 + plot_area_.h;
 
@@ -1141,58 +1252,41 @@ private:
     canvas_.draw_line(x1, y1, x0, y1, c, w, false);
     canvas_.draw_line(x0, y1, x0, y0, c, w, false);
 
+    const f64 tick_sz  = sc(axis_style_.tick_size);
+    const i32 fscale   = font_scale(1);
+    const f64 tick_gap = sc(3.0);   // gap between tick end and label
 
     auto xticks = rendering::TickEngine::compute(
-      data_bounds_.x_min, 
-      data_bounds_.x_max, 
-      8, 
-      false, 
-      axis_style_.x_scale
-    );
-
+      data_bounds_.x_min, data_bounds_.x_max, 8, false, axis_style_.x_scale);
 
     for (auto& t : xticks) {
       f64 px = transform_.to_px_x(t.value);
-      canvas_.draw_line(px, y1, px, y1 + axis_style_.tick_size, c, w, false);
+      canvas_.draw_line(px, y1, px, y1 + tick_sz, c, w, false);
 
       if (!t.label.empty()) {
-        i32 tw = rendering::text_width(t.label, 1);
-
+        i32 tw = rendering::text_width(t.label, fscale);
         rendering::draw_text(
-          canvas_, 
-          t.label,
+          canvas_, t.label,
           static_cast<i32>(px) - tw / 2,
-          static_cast<i32>(y1 + axis_style_.tick_size + 3),
-          text_style_.color, 
-          1
-        );
+          static_cast<i32>(y1 + tick_sz + tick_gap),
+          text_style_.color, fscale);
       }
     }
 
     auto yticks = rendering::TickEngine::compute(
-      data_bounds_.y_min, 
-      data_bounds_.y_max, 
-      6, 
-      false, 
-      axis_style_.y_scale
-    );
-
+      data_bounds_.y_min, data_bounds_.y_max, 6, false, axis_style_.y_scale);
 
     for (auto& t : yticks) {
       f64 py = transform_.to_px_y(t.value);
-      canvas_.draw_line(x0 - axis_style_.tick_size, py, x0, py, c, w, false);
-
+      canvas_.draw_line(x0 - tick_sz, py, x0, py, c, w, false);
 
       if (!t.label.empty()) {
-        i32 tw = rendering::text_width(t.label, 1);
+        i32 tw = rendering::text_width(t.label, fscale);
         rendering::draw_text(
-          canvas_, 
-          t.label,
-          static_cast<i32>(x0 - axis_style_.tick_size - 3) - tw,
-          static_cast<i32>(py) - 3,
-          text_style_.color, 
-          1
-        );
+          canvas_, t.label,
+          static_cast<i32>(x0 - tick_sz - tick_gap) - tw,
+          static_cast<i32>(py) - rendering::text_height(fscale) / 2,
+          text_style_.color, fscale);
       }
     }
   }
@@ -1213,16 +1307,16 @@ private:
         }
       }
 
-      Color c = st.color;
-      if (st.alpha < 1.0) c = c.with_alpha(static_cast<u32>(st.alpha * 255));
+      Color col = st.color;
+      if (st.alpha < 1.0) col = col.with_alpha(static_cast<u32>(st.alpha * 255));
 
       if (st.line_style != LineStyle::None && rx.count > 1) {
         for (usize i = 1; i < rx.count; ++i) {
           canvas_.draw_line(
             transform_.to_px_x(rx[i-1]), transform_.to_px_y(ry[i-1]),
             transform_.to_px_x(rx[i]),   transform_.to_px_y(ry[i]),
-            c,
-            st.width
+            col,
+            sc(st.width)
           );
         }
       }
@@ -1243,8 +1337,7 @@ private:
           canvas_.draw_circle(
             static_cast<i32>(transform_.to_px_x(rx[i])),
             static_cast<i32>(transform_.to_px_y(ry[i])),
-            st.marker_size, 
-            c
+            sc(st.marker_size), col
           );
         }
       }
@@ -1257,71 +1350,77 @@ private:
     for (auto& e : entries_) if (!e.style.label.empty()) labeled.push_back(&e);
     if (labeled.empty()) return;
 
-    i32 scale  = 1;
-    i32 line_h = rendering::text_height(scale) + 4;
+    const i32 fscale  = font_scale(1);
+    i32 line_h = rendering::text_height(fscale) + static_cast<i32>(sc(4.0));
     i32 max_w  = 0;
 
-
     for (auto* e : labeled) {
-      i32 w = rendering::text_width(e->style.label, scale);
+      i32 w = rendering::text_width(e->style.label, fscale);
       if (w > max_w) max_w = w;
     }
 
-    i32 box_w = max_w + 30 + static_cast<i32>(legend_style_.padding * 2);
-    i32 box_h = static_cast<i32>(labeled.size()) * line_h
-      + static_cast<i32>(legend_style_.padding * 2);
+    i32 pad   = static_cast<i32>(legend_style_.padding * (dpmm_ / detail::BASELINE_DPMM));
+    i32 swatch_w = static_cast<i32>(sc(18.0));  // colour swatch width
+    i32 swatch_gap = static_cast<i32>(sc(6.0)); // gap between swatch and text
 
+    i32 box_w = max_w + swatch_w + swatch_gap + pad * 2;
+    i32 box_h = static_cast<i32>(labeled.size()) * line_h + pad * 2;
 
-    i32 bx = static_cast<i32>(plot_area_.x + plot_area_.w) - box_w - 8;
-    i32 by = static_cast<i32>(plot_area_.y) + 8;
+    i32 bx = static_cast<i32>(plot_area_.x + plot_area_.w) - box_w - static_cast<i32>(sc(8.0));
+    i32 by = static_cast<i32>(plot_area_.y) + static_cast<i32>(sc(8.0));
 
     canvas_.fill_rect(bx, by, box_w, box_h, legend_style_.bg_color);
     canvas_.draw_rect(bx, by, box_w, box_h, legend_style_.border);
 
-
-    i32 ty = by + static_cast<i32>(legend_style_.padding);
+    i32 ty = by + pad;
     for (auto* e : labeled) {
-      i32 lx = bx + static_cast<i32>(legend_style_.padding);
+      i32 lx = bx + pad;
 
       canvas_.draw_line(
-        lx, 
-        ty + line_h / 2.0, 
-        lx + 18, 
-        ty + line_h / 2.0,
-        e->style.color, 
-        2.0,
-        false
-      );
+        lx, ty + line_h / 2.0,
+        lx + swatch_w, ty + line_h / 2.0,
+        e->style.color, sc(2.0), false);
 
-      rendering::draw_text(canvas_, e->style.label, lx + 24, ty, text_style_.color, scale);
+      rendering::draw_text(canvas_, e->style.label,
+        lx + swatch_w + swatch_gap, ty,
+        text_style_.color, fscale);
       ty += line_h;
     }
   }
 
   void render_title_and_labels() {
-    i32 scale = 2;
+    const i32 title_scale  = font_scale(2);
+    const i32 label_scale  = font_scale(1);
+
     if (!title_.empty()) {
-      i32 tw = rendering::text_width(title_, scale);
+      i32 tw = rendering::text_width(title_, title_scale);
       i32 tx = static_cast<i32>(fig_w_ / 2) - tw / 2;
-      rendering::draw_text(canvas_, title_, tx, 8, text_style_.color, scale);
+      rendering::draw_text(canvas_, title_, tx, static_cast<i32>(sc(8.0)),
+                           text_style_.color, title_scale);
     }
-    scale = 1;
     if (!xlabel_.empty()) {
-      i32 tw = rendering::text_width(xlabel_, scale);
+      i32 tw = rendering::text_width(xlabel_, label_scale);
       i32 tx = static_cast<i32>(plot_area_.x + plot_area_.w / 2) - tw / 2;
-      i32 ty = static_cast<i32>(fig_h_) - 15;
-      rendering::draw_text(canvas_, xlabel_, tx, ty, text_style_.color, scale);
+      i32 ty = static_cast<i32>(fig_h_) - static_cast<i32>(sc(15.0));
+      rendering::draw_text(canvas_, xlabel_, tx, ty, text_style_.color, label_scale);
     }
     if (!ylabel_.empty()) {
-      i32 lh = rendering::text_height_vertical(ylabel_, scale);
-      i32 tx = 5;
+      i32 lh = rendering::text_height_vertical(ylabel_, label_scale);
+      i32 tx = static_cast<i32>(sc(5.0));
       i32 ty = static_cast<i32>(plot_area_.y + plot_area_.h / 2) - lh / 2;
-      rendering::draw_text_vertical(canvas_, ylabel_, tx, ty, text_style_.color, scale);
+      rendering::draw_text_vertical(canvas_, ylabel_, tx, ty,
+                                    text_style_.color, label_scale);
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Member data
+  // -------------------------------------------------------------------------
+  f64          dpmm_;    ///< dots (pixels) per millimetre — the resolution
+  PhysicalSize phys_;    ///< physical dimensions in mm
+
   rendering::Canvas         canvas_;
-  f64                       fig_w_, fig_h_;
+  f64                       fig_w_, fig_h_;  ///< pixel dimensions (derived)
   detail::Rect              plot_area_;
   BBox                      data_bounds_;
   rendering::CoordTransform transform_;

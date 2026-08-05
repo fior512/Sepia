@@ -21,12 +21,12 @@ int main() {
   double gen_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
   std::printf("Data generation: %.1f ms\n", gen_ms);
 
-  Sepia::plot2d::Figure figure(700, 450);
-  figure.set_title("10M Points with LTTB Decimation");
+  Sepia::plot2d::Figure figure(280, 180, 5);
+  figure.set_title("10M Points without LTTB Decimation");
   figure.set_xlabel("Time (s)");
   figure.set_ylabel("Signal");
 
-  figure.perf({.lod_enable= true, .lod_target_points = 3000}); // 5000 3000 true
+  figure.perf({.lod_enable= false, .lod_target_points = 3000});
 
   figure.plot(Sepia::data::Series(std::move(x), std::move(y)))
     .data({.color = Sepia::Color::blue(), .width = 1.5, .label = "10M signal"});
@@ -40,8 +40,8 @@ int main() {
   double render_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
   std::printf("Render: %.1f ms (with LOD decimation)\n", render_ms);
 
-  figure.save_ppm("bin/plots/large_dataset_LTTB.ppm");
-  std::printf("Saved large_dataset_LTTB.ppm\n");
+  figure.save_ppm("bin/plots/large_dataset.ppm");
+  std::printf("Saved large_dataset.ppm\n");
 
   return 0;
 }

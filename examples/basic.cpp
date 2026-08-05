@@ -10,7 +10,7 @@ int main() {
     y[i] = std::sin(x[i]);
   }
 
-  Sepia::plot2d::Figure figure(700.0, 450.0);
+  Sepia::plot2d::Figure figure(200.0, 150.0, 3.0);
   figure.set_title("Sine Wave");
   figure.set_xlabel("Time");
   figure.set_ylabel("Amplitude");
