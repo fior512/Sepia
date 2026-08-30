@@ -906,18 +906,24 @@ inline bool write_ppm(const rendering::Canvas& canvas, const std::string& path) 
   std::ofstream f(path, std::ios::binary);
   if (!f.is_open()) return false;
 
-  f << "P6\n" << canvas.width() << " " << canvas.height() << "\n255\n";
-
   const u8* data = canvas.data();
   usize w = canvas.width(), h = canvas.height();
+  usize row_bytes = w * 3;
+  std::vector<u8> row(row_bytes);
 
-  for (usize y = 0; y < h; ++y)
+  f << "P6\n" << w << " " << h << "\n255\n";
+
+  // Assemble each RGB row in memory, then write it in one call instead of three put() per pixel.
+  for (usize y = 0; y < h; ++y) {
+    const u8* src = data + (y * w) * 4;
     for (usize x = 0; x < w; ++x) {
-      usize idx = (y * w + x) * 4;
-      f.put(static_cast<char>(data[idx + 0]));
-      f.put(static_cast<char>(data[idx + 1]));
-      f.put(static_cast<char>(data[idx + 2]));
+      usize s = x * 4, d = x * 3;
+      row[d + 0] = src[s + 0];
+      row[d + 1] = src[s + 1];
+      row[d + 2] = src[s + 2];
     }
+    f.write(reinterpret_cast<const char*>(row.data()), static_cast<std::streamsize>(row_bytes));
+  }
 
   return f.good();
 }
