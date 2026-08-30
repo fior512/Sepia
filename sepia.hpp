@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -162,9 +163,22 @@ struct Color {
   static constexpr Color orange() { return {255, 127, 0};   }
   static constexpr Color purple() { return {152, 78,  163}; }
   static constexpr Color gray()   { return {150, 150, 150}; }
+  static constexpr Color teal()   { return {0,   150, 136}; }
+  static constexpr Color magenta(){ return {231, 41,  138}; }
+  static constexpr Color brown()  { return {121, 85,  72};  }
+  static constexpr Color olive()  { return {128, 128, 0};   }
+
+  constexpr bool operator==(const Color& o) const { return r == o.r && g == o.g && b == o.b && a == o.a; }
+  constexpr bool operator!=(const Color& o) const { return !(*this == o); }
 
   constexpr Color with_alpha(u32 alpha) const { return {r, g, b, alpha}; }
 };
+
+// Auto palette for series without an explicit color; excludes black and white.
+inline constexpr std::array<Color, 10> kAutoPalette = {{
+  Color::blue(), Color::red(), Color::green(), Color::orange(), Color::purple(),
+  Color::teal(), Color::magenta(), Color::brown(), Color::olive(), Color::gray()
+}};
 
 // --- Public: BBox -------------------------------------------------
 struct BBox {
@@ -210,6 +224,7 @@ namespace params {
 
 struct DataStyle {
   Color color = Color::blue();
+  bool  auto_color = true;
   f64   width = 1.5;
   f64   alpha = 1.0;
   LineStyle line_style = LineStyle::Solid;
@@ -951,9 +966,13 @@ public:
     fig_(fig), entry_{std::move(series), {}} 
   {}
 
-  PlotCommand& data(const params::DataStyle& style) { entry_.style = style; return *this; }
+  PlotCommand& data(const params::DataStyle& style) {
+    entry_.style = style;
+    if (style.color != Color::blue()) entry_.style.auto_color = false;
+    return *this;
+  }
 
-  PlotCommand& color(Color c)              { entry_.style.color      = c;    return *this; }
+  PlotCommand& color(Color c)              { entry_.style.color      = c; entry_.style.auto_color = false; return *this; }
   PlotCommand& width(f64 w)                { entry_.style.width      = w;    return *this; }
   PlotCommand& alpha(f64 a)                { entry_.style.alpha      = a;    return *this; }
   PlotCommand& label(const std::string& l) { entry_.style.label      = l;    return *this; }
@@ -1036,7 +1055,14 @@ public:
 private:
   friend class PlotCommand;
 
-  void add_entry(PlotEntry&& e) { entries_.push_back(std::move(e)); }
+  void add_entry(PlotEntry&& e) {
+    if (e.style.auto_color) {
+      e.style.color = kAutoPalette[auto_color_index_ % kAutoPalette.size()];
+      e.style.auto_color = false;
+      ++auto_color_index_;
+    }
+    entries_.push_back(std::move(e));
+  }
 
   void compute_plot_area() {
     plot_area_ = {
@@ -1336,6 +1362,7 @@ private:
   params::PerfParams  perf_;
 
   std::vector<PlotEntry> entries_;
+  usize auto_color_index_ = 0; // counts auto-assigned series, independent of total entries
 };
 
 inline PlotCommand::~PlotCommand() { if (!committed_) commit(); }
