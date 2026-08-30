@@ -17,7 +17,7 @@ struct BenchResult {
 
 static double bench_render(size_t N, bool lod_enable) {
   // Generate synthetic signal
-  Sepia::AlignedBuffer<Sepia::f64> x(N), y(N);
+  Sepia::AlignedBuffer<double> x(N), y(N);
   for (size_t i = 0; i < N; ++i) {
     double t = static_cast<double>(i) / static_cast<double>(N) * 100.0;
     x[i] = t;
@@ -78,7 +78,7 @@ int main() {
 
   // ---- Plot the results using Sepia itself ----
   const size_t R = results.size();
-  std::vector<Sepia::f64> x_vals(R), y_with(R), y_without(R);
+  std::vector<double> x_vals(R), y_with(R), y_without(R);
 
   for (size_t i = 0; i < R; ++i) {
     x_vals[i]    = static_cast<double>(results[i].n);  // actual dataset size

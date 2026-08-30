@@ -6,23 +6,23 @@
 using namespace Sepia;
 using namespace Sepia::plot2d;
 
-static usize nonbg_count(const rendering::Canvas& c) {
-  const u8* p = c.data();
-  usize n = (usize)c.width() * c.height();
-  usize cnt = 0;
-  for (usize i = 0; i < n; ++i) {
-    usize o = i * 4;
+static std::size_t nonbg_count(const rendering::Canvas& c) {
+  const std::uint8_t* p = c.data();
+  std::size_t n = (std::size_t)c.width() * c.height();
+  std::size_t cnt = 0;
+  for (std::size_t i = 0; i < n; ++i) {
+    std::size_t o = i * 4;
     if (p[o] != 255 || p[o+1] != 255 || p[o+2] != 255) ++cnt;
   }
   return cnt;
 }
 
-static usize colored_columns(const rendering::Canvas& c) {
-  usize cols = 0;
-  for (u32 x = 0; x < c.width(); ++x) {
+static std::size_t colored_columns(const rendering::Canvas& c) {
+  std::size_t cols = 0;
+  for (std::uint32_t x = 0; x < c.width(); ++x) {
     bool hit = false;
-    for (u32 y = 0; y < c.height() && !hit; ++y) {
-      const u8* p = c.data() + ((usize)y * c.width() + x) * 4;
+    for (std::uint32_t y = 0; y < c.height() && !hit; ++y) {
+      const std::uint8_t* p = c.data() + ((std::size_t)y * c.width() + x) * 4;
       if (p[0] != 255 || p[1] != 255 || p[2] != 255) hit = true;
     }
     if (hit) ++cols;
@@ -32,9 +32,9 @@ static usize colored_columns(const rendering::Canvas& c) {
 
 TEST_CASE("NaN splits the line leaving a gap") {
   Figure cont(400, 200), gap(400, 200);
-  std::vector<f64> x{0, 1, 2, 3}, y{0, 0, 0, 0};
-  std::vector<f64> yn = y;
-  yn[2] = std::numeric_limits<f64>::quiet_NaN();
+  std::vector<double> x{0, 1, 2, 3}, y{0, 0, 0, 0};
+  std::vector<double> yn = y;
+  yn[2] = std::numeric_limits<double>::quiet_NaN();
   cont.grid({.show = false});
   gap.grid({.show = false});
   params::AxisStyle ax; ax.show = false;
@@ -50,7 +50,7 @@ TEST_CASE("NaN splits the line leaving a gap") {
 
 TEST_CASE("NaN in fill and marker paths does not crash") {
   Figure f(400, 200);
-  std::vector<f64> x{0, 1, 2, 3}, y{0, 1, std::numeric_limits<f64>::quiet_NaN(), 3};
+  std::vector<double> x{0, 1, 2, 3}, y{0, 1, std::numeric_limits<double>::quiet_NaN(), 3};
   f.plot(x.data(), y.data(), 4).fill(true).marker(MarkerStyle::Circle, 4.0);
   CHECK_NOTHROW(f.render());
 }

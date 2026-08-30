@@ -7,7 +7,7 @@ int main() {
   constexpr size_t N = 10'000'000;
 
   std::printf("Allocating %zu points...\n", N);
-  Sepia::AlignedBuffer<Sepia::f64> x(N), y(N);
+  Sepia::AlignedBuffer<double> x(N), y(N);
 
   auto t0 = std::chrono::high_resolution_clock::now();
 

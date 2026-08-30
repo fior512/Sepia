@@ -12,26 +12,25 @@
 #include <limits>
 #include <new>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace Sepia {
 
-// -- Public: scalar type aliases ------------------
-using f32   = float;
-using f64   = double;
-using i32   = std::int32_t;
-using i64   = std::int64_t;
-using u8    = std::uint8_t;
-using u32   = std::uint32_t;
-using u64   = std::uint64_t;
-using usize = std::size_t;
+// Scalar types are the standard C++ types (float, double, std::int32_t, ...). Users pick any
+// arithmetic type as the template parameter; no framework-specific aliases are exported.
+
+// Public: static default scalar for all data containers. Specialize scalar_traits<void>
+// (or another tag) before first use to switch a project to float for the speed-accuracy knob.
+template <typename Tag = void>
+struct scalar_traits { using type = double; };
 
 // --- detail: implementation plumbing, not part of the public API 
 namespace detail {
 
-inline void* aligned_alloc_impl(usize alignment, usize bytes) {
+inline void* aligned_alloc_impl(std::size_t alignment, std::size_t bytes) {
   void* ptr = nullptr;
 #if defined(_WIN32)
   ptr = _aligned_malloc(bytes, alignment);
@@ -53,7 +52,7 @@ inline void aligned_free_impl(void* ptr) {
 // Bump allocator for short-lived per-frame scratch work
 class Arena {
 public:
-  explicit Arena(usize capacity)
+  explicit Arena(std::size_t capacity)
     : capacity_(capacity)
     , buf_(static_cast<char*>(aligned_alloc_impl(64, capacity)))
   {}
@@ -62,9 +61,9 @@ public:
   Arena(const Arena&)            = delete;
   Arena& operator=(const Arena&) = delete;
 
-  void* alloc(usize bytes, usize align = 8) {
-    usize padding    = (align - (offset_ % align)) % align;
-    usize new_offset = offset_ + padding + bytes;
+  void* alloc(std::size_t bytes, std::size_t align = 8) {
+    std::size_t padding    = (align - (offset_ % align)) % align;
+    std::size_t new_offset = offset_ + padding + bytes;
     if (new_offset > capacity_) throw std::bad_alloc();
     void* ptr = buf_ + offset_ + padding;
     offset_ = new_offset;
@@ -78,33 +77,33 @@ public:
   }
 
   void  reset()    { offset_ = 0; }
-  usize used()     const { return offset_; }
-  usize capacity() const { return capacity_; }
+  std::size_t used()     const { return offset_; }
+  std::size_t capacity() const { return capacity_; }
 
 private:
-  usize capacity_;
-  usize offset_ = 0;
+  std::size_t capacity_;
+  std::size_t offset_ = 0;
   char* buf_;
 };
 
 // Pixel-space rectangle; only used inside Figure layout and CoordTransform
 struct Rect {
-  f64 x = 0, y = 0, w = 0, h = 0;
+  double x = 0, y = 0, w = 0, h = 0;
 
   constexpr Rect() = default;
-  constexpr Rect(f64 x, f64 y, f64 w, f64 h) : x(x), y(y), w(w), h(h) {}
+  constexpr Rect(double x, double y, double w, double h) : x(x), y(y), w(w), h(h) {}
 };
 
 } // NS detail
 
 // --- Public: AlignedBuffer<T> ---------------------------------------
 // Cache-line (64-byte) aligned contiguous buffer. Move-only
-template <typename T, usize Alignment = 64>
+template <typename T, std::size_t Alignment = 64>
 class AlignedBuffer {
 public:
   AlignedBuffer() = default;
 
-  explicit AlignedBuffer(usize count)
+  explicit AlignedBuffer(std::size_t count)
     : size_(count)
     , data_(static_cast<T*>(detail::aligned_alloc_impl(Alignment, count * sizeof(T))))
   {}
@@ -122,7 +121,7 @@ public:
     return *this;
   }
 
-  void resize(usize count) {
+  void resize(std::size_t count) {
     if (count == size_) return;
     release();
     size_ = count;
@@ -131,11 +130,11 @@ public:
 
   T*       data()        { return data_; }
   const T* data()  const { return data_; }
-  usize    size()  const { return size_; }
+  std::size_t    size()  const { return size_; }
   bool     empty() const { return size_ == 0; }
 
-  T&       operator[](usize i)       { return data_[i]; }
-  const T& operator[](usize i) const { return data_[i]; }
+  T&       operator[](std::size_t i)       { return data_[i]; }
+  const T& operator[](std::size_t i) const { return data_[i]; }
 
   T*       begin()       { return data_; }
   T*       end()         { return data_ + size_; }
@@ -144,16 +143,16 @@ public:
 
 private:
   void release() { if (data_) { detail::aligned_free_impl(data_); data_ = nullptr; size_ = 0; } }
-  usize size_ = 0;
+  std::size_t size_ = 0;
   T*    data_ = nullptr;
 };
 
 // --- Public: Color --------------------------------------
 struct Color {
-  u32 r = 0, g = 0, b = 0, a = 255;
+  std::uint32_t r = 0, g = 0, b = 0, a = 255;
 
   constexpr Color() = default;
-  constexpr Color(u32 r, u32 g, u32 b, u32 a = 255) : r(r), g(g), b(b), a(a) {}
+  constexpr Color(std::uint32_t r, std::uint32_t g, std::uint32_t b, std::uint32_t a = 255) : r(r), g(g), b(b), a(a) {}
 
   static constexpr Color black()  { return {0,   0,   0};   }
   static constexpr Color white()  { return {255, 255, 255}; }
@@ -171,7 +170,7 @@ struct Color {
   constexpr bool operator==(const Color& o) const { return r == o.r && g == o.g && b == o.b && a == o.a; }
   constexpr bool operator!=(const Color& o) const { return !(*this == o); }
 
-  constexpr Color with_alpha(u32 alpha) const { return {r, g, b, alpha}; }
+  constexpr Color with_alpha(std::uint32_t alpha) const { return {r, g, b, alpha}; }
 };
 
 // Auto palette for series without an explicit color; excludes black and white.
@@ -182,14 +181,14 @@ inline constexpr std::array<Color, 10> kAutoPalette = {{
 
 // --- Public: BBox -------------------------------------------------
 struct BBox {
-  f64 x_min =  std::numeric_limits<f64>::max();
-  f64 x_max = -std::numeric_limits<f64>::max();
-  f64 y_min =  std::numeric_limits<f64>::max();
-  f64 y_max = -std::numeric_limits<f64>::max();
+  double x_min =  std::numeric_limits<double>::max();
+  double x_max = -std::numeric_limits<double>::max();
+  double y_min =  std::numeric_limits<double>::max();
+  double y_max = -std::numeric_limits<double>::max();
 
   constexpr bool empty() const { return x_min > x_max; }
 
-  void expand(f64 x, f64 y) {
+  void expand(double x, double y) {
     if (x < x_min) x_min = x;
     if (x > x_max) x_max = x;
     if (y < y_min) y_min = y;
@@ -202,20 +201,20 @@ struct BBox {
     expand(o.x_max, o.y_max);
   }
 
-  f64 width()  const { return x_max - x_min; }
-  f64 height() const { return y_max - y_min; }
+  double width()  const { return x_max - x_min; }
+  double height() const { return y_max - y_min; }
 };
 
 // --- Public: style enumerations ------------------------------------------------
-enum class LineStyle : u32 {
+enum class LineStyle : std::uint32_t {
   Solid, Dashed, Dotted, DashDot, None
 };
 
-enum class MarkerStyle : u32 {
+enum class MarkerStyle : std::uint32_t {
   None, Circle, Square, Triangle, Cross, Diamond
 };
 
-enum class ScaleType : u32 {
+enum class ScaleType : std::uint32_t {
   Linear, Log
 };
 
@@ -225,12 +224,12 @@ namespace params {
 struct DataStyle {
   Color color = Color::blue();
   bool  auto_color = true;
-  f64   width = 1.5;
-  f64   alpha = 1.0;
+  double width = 1.5;
+  double alpha = 1.0;
   LineStyle line_style = LineStyle::Solid;
 
   MarkerStyle marker      = MarkerStyle::None;
-  f64         marker_size = 4.0;
+  double         marker_size = 4.0;
 
   bool  fill       = false;
   Color fill_color = Color::blue().with_alpha(50);
@@ -242,54 +241,54 @@ struct GridStyle {
   bool  show        = true;
   Color major_color = {220, 220, 220};
   Color minor_color = {240, 240, 240};
-  f64   major_width = 1.0;
-  f64   minor_width = 0.5;
-  f64   major_alpha = 0.8;
-  f64   minor_alpha = 0.4;
+  double   major_width = 1.0;
+  double   minor_width = 0.5;
+  double   major_alpha = 0.8;
+  double   minor_alpha = 0.4;
   bool  show_minor  = false;
 };
 
 struct AxisStyle {
   bool  show       = true;
   Color color      = Color::black();
-  f64   width      = 1.0;
-  f64   tick_size  = 5.0;
+  double   width      = 1.0;
+  double   tick_size  = 5.0;
   Color tick_color = Color::black();
 
   ScaleType x_scale = ScaleType::Linear;
-  f64       x_min   = 0.0;
-  f64       x_max   = 0.0;
+  double       x_min   = 0.0;
+  double       x_max   = 0.0;
 
   ScaleType y_scale = ScaleType::Linear;
-  f64       y_min   = 0.0;
-  f64       y_max   = 0.0;
+  double       y_min   = 0.0;
+  double       y_max   = 0.0;
 };
 
 struct LegendStyle {
   bool  show     = true;
   Color bg_color = Color::white().with_alpha(230);
   Color border   = Color::gray();
-  f64   padding  = 8.0;
+  double   padding  = 8.0;
   std::string position = "top-right";
 };
 
 struct TextStyle {
   Color       color     = Color::black();
-  f64         font_size = 12.0;
+  double         font_size = 12.0;
   std::string font_face = "sans";
 };
 
 struct LayoutStyle {
-  f64   margin_top    = 50.0;
-  f64   margin_bottom = 60.0;
-  f64   margin_left   = 70.0;
-  f64   margin_right  = 20.0;
+  double   margin_top    = 50.0;
+  double   margin_bottom = 60.0;
+  double   margin_left   = 70.0;
+  double   margin_right  = 20.0;
   Color background    = Color::white();
 };
 
 struct PerfParams {
   bool  lod_enable        = false;
-  usize lod_target_points = 2000;
+  std::size_t lod_target_points = 2000;
 };
 
 } // NS params
@@ -297,109 +296,122 @@ struct PerfParams {
 // --- Public: data, owning and non-owning series types --------------------------
 namespace data {
 
+template <typename T = typename scalar_traits<>::type>
 struct DataView {
-  const f64* ptr    = nullptr;
-  usize      count  = 0;
-  usize      stride = 1;
+  const T* ptr    = nullptr;
+  std::size_t    count  = 0;
+  std::size_t    stride = 1;
 
-  f64  operator[](usize i) const { return ptr[i * stride]; }
-  bool empty() const { return count == 0 || ptr == nullptr; }
+  T     operator[](std::size_t i) const { return ptr[i * stride]; }
+  bool  empty() const { return count == 0 || ptr == nullptr; }
 };
 
+// T is the stored/computed scalar, S is the input scalar. S defaults to T; different S
+// compresses or widens on ingest (e.g. Series<float, double> stores double input as float).
+template <typename T = typename scalar_traits<>::type>
 class Series {
 public:
   Series() = default;
 
-  Series(const f64* x, const f64* y, usize n) : x_(n), y_(n) {
-    std::memcpy(x_.data(), x, n * sizeof(f64));
-    std::memcpy(y_.data(), y, n * sizeof(f64));
+  Series(const T* x, const T* y, std::size_t n) : x_(n), y_(n) {
+    std::memcpy(x_.data(), x, n * sizeof(T));
+    std::memcpy(y_.data(), y, n * sizeof(T));
     recompute_bounds();
   }
 
-  Series(AlignedBuffer<f64>&& x, AlignedBuffer<f64>&& y)
+  // Input type S is deduced from the pointers and converted to T (compress or widen).
+  template <typename S>
+  Series(const S* x, const S* y, std::size_t n) : x_(n), y_(n) {
+    for (std::size_t i = 0; i < n; ++i) { x_[i] = static_cast<T>(x[i]); y_[i] = static_cast<T>(y[i]); }
+    recompute_bounds();
+  }
+
+  Series(AlignedBuffer<T>&& x, AlignedBuffer<T>&& y)
   : x_(std::move(x)), y_(std::move(y)) { recompute_bounds(); }
 
-  DataView    x_view()  const { return {x_.data(), x_.size(), 1}; }
-  DataView    y_view()  const { return {y_.data(), y_.size(), 1}; }
-  usize       size()    const { return x_.size(); }
+  DataView<T> x_view()  const { return {x_.data(), x_.size(), 1}; }
+  DataView<T> y_view()  const { return {y_.data(), y_.size(), 1}; }
+  std::size_t       size()    const { return x_.size(); }
   const BBox& bounds()  const { return bounds_; }
 
-  f64*       x_data()       { return x_.data(); }
-  f64*       y_data()       { return y_.data(); }
-  const f64* x_data() const { return x_.data(); }
-  const f64* y_data() const { return y_.data(); }
+  T*       x_data()       { return x_.data(); }
+  T*       y_data()       { return y_.data(); }
+  const T* x_data() const { return x_.data(); }
+  const T* y_data() const { return y_.data(); }
 
   void recompute_bounds() {
     bounds_ = {};
-    const usize n = x_.size();
-    for (usize i = 0; i < n; ++i) bounds_.expand(x_[i], y_[i]);
+    const std::size_t n = x_.size();
+    for (std::size_t i = 0; i < n; ++i) bounds_.expand(static_cast<double>(x_[i]), static_cast<double>(y_[i]));
   }
 
 private:
-  AlignedBuffer<f64> x_;
-  AlignedBuffer<f64> y_;
+  AlignedBuffer<T> x_;
+  AlignedBuffer<T> y_;
   BBox bounds_;
 };
 
+template <typename T = typename scalar_traits<>::type>
 class ExternalSeries {
 public:
   ExternalSeries() = default;
-  ExternalSeries(const f64* x, const f64* y, usize n, usize stride = 1)
+  ExternalSeries(const T* x, const T* y, std::size_t n, std::size_t stride = 1)
   : x_{x, n, stride}, y_{y, n, stride} { recompute_bounds(); }
 
-  DataView    x_view()  const { return x_; }
-  DataView    y_view()  const { return y_; }
-  usize       size()    const { return x_.count; }
+  DataView<T> x_view()  const { return x_; }
+  DataView<T> y_view()  const { return y_; }
+  std::size_t       size()    const { return x_.count; }
   const BBox& bounds()  const { return bounds_; }
 
   void recompute_bounds() {
     bounds_ = {};
-    for (usize i = 0; i < x_.count; ++i) bounds_.expand(x_[i], y_[i]);
+    for (std::size_t i = 0; i < x_.count; ++i) bounds_.expand(static_cast<double>(x_[i]), static_cast<double>(y_[i]));
   }
 
 private:
-  DataView x_, y_;
+  DataView<T> x_, y_;
   BBox bounds_;
 };
 
 // Internal: LTTB decimator. Users configure via PerfParams; never call directly
+template <typename T = typename scalar_traits<>::type>
 class LttbDecimator {
 public:
-  static Series decimate(const DataView& xv, const DataView& yv, usize target) {
-    const usize n = xv.count;
+  static Series<T> decimate(const DataView<T>& xv, const DataView<T>& yv, std::size_t target) {
+    const std::size_t n = xv.count;
     if (target >= n || target < 3) {
-      AlignedBuffer<f64> ox(n), oy(n);
-      for (usize i = 0; i < n; ++i) { ox[i] = xv[i]; oy[i] = yv[i]; }
-      return Series(std::move(ox), std::move(oy));
+      AlignedBuffer<T> ox(n), oy(n);
+      for (std::size_t i = 0; i < n; ++i) { ox[i] = xv[i]; oy[i] = yv[i]; }
+      return Series<T>(std::move(ox), std::move(oy));
     }
 
-    AlignedBuffer<f64> ox(target), oy(target);
+    AlignedBuffer<T> ox(target), oy(target);
     ox[0] = xv[0]; oy[0] = yv[0];
 
-    const f64 bucket_size = static_cast<f64>(n - 2) / static_cast<f64>(target - 2);
-    usize a = 0;
+    const double bucket_size = static_cast<double>(n - 2) / static_cast<double>(target - 2);
+    std::size_t a = 0;
 
-    for (usize i = 1; i < target - 1; ++i) {
-      usize bucket_start = static_cast<usize>((i - 1) * bucket_size) + 1;
-      usize bucket_end   = static_cast<usize>(i * bucket_size) + 1;
+    for (std::size_t i = 1; i < target - 1; ++i) {
+      std::size_t bucket_start = static_cast<std::size_t>((i - 1) * bucket_size) + 1;
+      std::size_t bucket_end   = static_cast<std::size_t>(i * bucket_size) + 1;
       if (bucket_end > n - 1) bucket_end = n - 1;
 
-      usize next_start = static_cast<usize>(i * bucket_size) + 1;
-      usize next_end   = static_cast<usize>((i + 1) * bucket_size) + 1;
+      std::size_t next_start = static_cast<std::size_t>(i * bucket_size) + 1;
+      std::size_t next_end   = static_cast<std::size_t>((i + 1) * bucket_size) + 1;
       if (next_end > n) next_end = n;
 
-      f64 avg_x = 0, avg_y = 0;
-      usize next_count = next_end - next_start;
-      for (usize j = next_start; j < next_end; ++j) { avg_x += xv[j]; avg_y += yv[j]; }
-      if (next_count > 0) { avg_x /= next_count; avg_y /= next_count; }
+      T avg_x = 0, avg_y = 0;
+      std::size_t next_count = next_end - next_start;
+      for (std::size_t j = next_start; j < next_end; ++j) { avg_x += xv[j]; avg_y += yv[j]; }
+      if (next_count > 0) { avg_x /= static_cast<T>(next_count); avg_y /= static_cast<T>(next_count); }
 
-      f64 max_area = -1.0; usize max_idx = bucket_start;
-      f64 ax = xv[a], ay = yv[a];
+      T max_area = static_cast<T>(-1); std::size_t max_idx = bucket_start;
+      T ax = xv[a], ay = yv[a];
 
-      for (usize j = bucket_start; j < bucket_end; ++j) {
-        f64 area = std::abs(
+      for (std::size_t j = bucket_start; j < bucket_end; ++j) {
+        T area = std::abs(
           (ax - avg_x) * (yv[j] - ay) - (ax - xv[j]) * (avg_y - ay)
-        ) * 0.5;
+        ) * static_cast<T>(0.5);
         if (area > max_area) { max_area = area; max_idx = j; }
       }
 
@@ -408,7 +420,7 @@ public:
     }
 
     ox[target - 1] = xv[n - 1]; oy[target - 1] = yv[n - 1];
-    return Series(std::move(ox), std::move(oy));
+    return Series<T>(std::move(ox), std::move(oy));
   }
 };
 
@@ -422,57 +434,57 @@ class Canvas {
 public:
   Canvas() = default;
 
-  Canvas(u32 width, u32 height)
+  Canvas(std::uint32_t width, std::uint32_t height)
     : width_(width), height_(height)
-    , pixels_(static_cast<usize>(width) * height * 4)
+    , pixels_(static_cast<std::size_t>(width) * height * 4)
   {
     clear({255, 255, 255, 255});
   }
 
 
   void clear(Color c) {
-    u32* px     = reinterpret_cast<u32*>(pixels_.data());
-    u32  packed = pack(c);
-    usize total = static_cast<usize>(width_) * height_;
+    std::uint32_t* px     = reinterpret_cast<std::uint32_t*>(pixels_.data());
+    std::uint32_t  packed = pack(c);
+    std::size_t total = static_cast<std::size_t>(width_) * height_;
     std::fill(px, px + total, packed);
   }
 
 
-  void set_pixel(i32 x, i32 y, Color c) {
-    if (x < 0 || y < 0 || x >= static_cast<i32>(width_) || y >= static_cast<i32>(height_)) return;
-    usize idx = (static_cast<usize>(y) * width_ + x) * 4;
-    u8* dst = pixels_.data() + idx;
+  void set_pixel(std::int32_t x, std::int32_t y, Color c) {
+    if (x < 0 || y < 0 || x >= static_cast<std::int32_t>(width_) || y >= static_cast<std::int32_t>(height_)) return;
+    std::size_t idx = (static_cast<std::size_t>(y) * width_ + x) * 4;
+    std::uint8_t* dst = pixels_.data() + idx;
 
     if (c.a == 255) {
-      dst[0] = static_cast<u8>(c.r); dst[1] = static_cast<u8>(c.g);
-      dst[2] = static_cast<u8>(c.b); dst[3] = 255;
+      dst[0] = static_cast<std::uint8_t>(c.r); dst[1] = static_cast<std::uint8_t>(c.g);
+      dst[2] = static_cast<std::uint8_t>(c.b); dst[3] = 255;
 
     } else {
-      u32 sa = c.a, da = 255 - sa;
-      dst[0] = static_cast<u8>((c.r * sa + dst[0] * da) / 255);
-      dst[1] = static_cast<u8>((c.g * sa + dst[1] * da) / 255);
-      dst[2] = static_cast<u8>((c.b * sa + dst[2] * da) / 255);
-      dst[3] = static_cast<u8>(sa + (dst[3] * da) / 255);
+      std::uint32_t sa = c.a, da = 255 - sa;
+      dst[0] = static_cast<std::uint8_t>((c.r * sa + dst[0] * da) / 255);
+      dst[1] = static_cast<std::uint8_t>((c.g * sa + dst[1] * da) / 255);
+      dst[2] = static_cast<std::uint8_t>((c.b * sa + dst[2] * da) / 255);
+      dst[3] = static_cast<std::uint8_t>(sa + (dst[3] * da) / 255);
     }
   }
 
-  void draw_line(f64 x0, f64 y0, f64 x1, f64 y1, Color c, f64 width = 1.0, bool aa=true) {
+  void draw_line(double x0, double y0, double x1, double y1, Color c, double width = 1.0, bool aa=true) {
     if(aa) draw_line_aa(x0, y0, x1, y1, c, width);
     else draw_line_bresenham(x0, y0, x1, y1, c, width);
   }
 
 
-  void fill_rect(i32 x, i32 y, i32 w, i32 h, Color c) {
-    i32 x0 = std::max(x, 0), y0 = std::max(y, 0);
-    i32 x1 = std::min(x + w, static_cast<i32>(width_));
-    i32 y1 = std::min(y + h, static_cast<i32>(height_));
+  void fill_rect(std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, Color c) {
+    std::int32_t x0 = std::max(x, 0), y0 = std::max(y, 0);
+    std::int32_t x1 = std::min(x + w, static_cast<std::int32_t>(width_));
+    std::int32_t y1 = std::min(y + h, static_cast<std::int32_t>(height_));
 
-    for (i32 py = y0; py < y1; ++py)
-      for (i32 px = x0; px < x1; ++px) set_pixel(px, py, c);
+    for (std::int32_t py = y0; py < y1; ++py)
+      for (std::int32_t px = x0; px < x1; ++px) set_pixel(px, py, c);
   }
 
 
-  void draw_rect(i32 x, i32 y, i32 w, i32 h, Color c, f64 line_w = 1.0) { // legend
+  void draw_rect(std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, Color c, double line_w = 1.0) { // legend
     draw_line(x, y, x + w, y, c, line_w, false);
     draw_line(x + w, y, x + w, y + h, c, line_w, false);
     draw_line(x + w, y + h, x, y + h, c, line_w, false);
@@ -480,40 +492,40 @@ public:
   }
 
 
-  void draw_circle(i32 cx, i32 cy, f64 radius, Color c) {
-    i32 r = static_cast<i32>(radius);
-    for (i32 dy = -r; dy <= r; ++dy)
-      for (i32 dx = -r; dx <= r; ++dx)
+  void draw_circle(std::int32_t cx, std::int32_t cy, double radius, Color c) {
+    std::int32_t r = static_cast<std::int32_t>(radius);
+    for (std::int32_t dy = -r; dy <= r; ++dy)
+      for (std::int32_t dx = -r; dx <= r; ++dx)
         if (dx * dx + dy * dy <= r * r)
           set_pixel(cx + dx, cy + dy, c);
   }
 
 
-  u8*       data()   { return pixels_.data(); }
-  const u8* data()   const { return pixels_.data(); }
-  u32       width()  const { return width_; }
-  u32       height() const { return height_; }
-  usize     stride() const { return static_cast<usize>(width_) * 4; }
+  std::uint8_t*       data()   { return pixels_.data(); }
+  const std::uint8_t* data()   const { return pixels_.data(); }
+  std::uint32_t       width()  const { return width_; }
+  std::uint32_t       height() const { return height_; }
+  std::size_t     stride() const { return static_cast<std::size_t>(width_) * 4; }
 
 private:
-  static u32 pack(Color c) {
-    return static_cast<u32>(c.r)
-    | (static_cast<u32>(c.g) << 8)
-    | (static_cast<u32>(c.b) << 16)
-    | (static_cast<u32>(c.a) << 24);
+  static std::uint32_t pack(Color c) {
+    return static_cast<std::uint32_t>(c.r)
+    | (static_cast<std::uint32_t>(c.g) << 8)
+    | (static_cast<std::uint32_t>(c.b) << 16)
+    | (static_cast<std::uint32_t>(c.a) << 24);
   }
 
-  void draw_line_aa(f64 x0, f64 y0, f64 x1, f64 y1, Color c, f64 /*width*/) {
+  void draw_line_aa(double x0, double y0, double x1, double y1, Color c, double /*width*/) {
     bool steep = std::abs(y1 - y0) > std::abs(x1 - x0);
     if (steep)   { std::swap(x0, y0); std::swap(x1, y1); }
     if (x0 > x1) { std::swap(x0, x1); std::swap(y0, y1); }
 
-    f64 dx = x1 - x0, dy = y1 - y0;
-    f64 gradient = (dx == 0.0) ? 1.0 : dy / dx;
+    double dx = x1 - x0, dy = y1 - y0;
+    double gradient = (dx == 0.0) ? 1.0 : dy / dx;
 
-    f64 xend = std::round(x0), yend = y0 + gradient * (xend - x0);
-    f64 xgap = rfpart(x0 + 0.5);
-    i32 xpxl1 = static_cast<i32>(xend), ypxl1 = static_cast<i32>(std::floor(yend));
+    double xend = std::round(x0), yend = y0 + gradient * (xend - x0);
+    double xgap = rfpart(x0 + 0.5);
+    std::int32_t xpxl1 = static_cast<std::int32_t>(xend), ypxl1 = static_cast<std::int32_t>(std::floor(yend));
     if (steep) {
       plot(ypxl1,     xpxl1, c, rfpart(yend) * xgap);
       plot(ypxl1 + 1, xpxl1, c,  fpart(yend) * xgap);
@@ -521,11 +533,11 @@ private:
       plot(xpxl1, ypxl1,     c, rfpart(yend) * xgap);
       plot(xpxl1, ypxl1 + 1, c,  fpart(yend) * xgap);
     }
-    f64 intery = yend + gradient;
+    double intery = yend + gradient;
 
     xend = std::round(x1); yend = y1 + gradient * (xend - x1);
     xgap = fpart(x1 + 0.5);
-    i32 xpxl2 = static_cast<i32>(xend), ypxl2 = static_cast<i32>(std::floor(yend));
+    std::int32_t xpxl2 = static_cast<std::int32_t>(xend), ypxl2 = static_cast<std::int32_t>(std::floor(yend));
     if (steep) {
       plot(ypxl2,     xpxl2, c, rfpart(yend) * xgap);
       plot(ypxl2 + 1, xpxl2, c,  fpart(yend) * xgap);
@@ -534,8 +546,8 @@ private:
       plot(xpxl2, ypxl2 + 1, c,  fpart(yend) * xgap);
     }
 
-    for (i32 x = xpxl1 + 1; x < xpxl2; ++x) {
-      i32 iy = static_cast<i32>(std::floor(intery));
+    for (std::int32_t x = xpxl1 + 1; x < xpxl2; ++x) {
+      std::int32_t iy = static_cast<std::int32_t>(std::floor(intery));
       if (steep) {
         plot(iy,     x, c, rfpart(intery));
         plot(iy + 1, x, c,  fpart(intery));
@@ -547,12 +559,12 @@ private:
     }
   }
 
-  void draw_line_bresenham(f64 x0, f64 y0, f64 x1, f64 y1, Color c, f64 width) {
+  void draw_line_bresenham(double x0, double y0, double x1, double y1, Color c, double width) {
     // Convert to integer coordinates (rounding)
-    i32 x0i = static_cast<i32>(std::round(x0));
-    i32 y0i = static_cast<i32>(std::round(y0));
-    i32 x1i = static_cast<i32>(std::round(x1));
-    i32 y1i = static_cast<i32>(std::round(y1));
+    std::int32_t x0i = static_cast<std::int32_t>(std::round(x0));
+    std::int32_t y0i = static_cast<std::int32_t>(std::round(y0));
+    std::int32_t x1i = static_cast<std::int32_t>(std::round(x1));
+    std::int32_t y1i = static_cast<std::int32_t>(std::round(y1));
 
     // Width > 1 is more complex; for simplicity, we ignore width > 1 in this example
     // (you could draw multiple parallel lines later)
@@ -568,13 +580,13 @@ private:
         std::swap(y0i, y1i);
     }
 
-    i32 dx = x1i - x0i;
-    i32 dy = std::abs(y1i - y0i);
-    i32 err = dx / 2;
-    i32 ystep = (y0i < y1i) ? 1 : -1;
-    i32 y = y0i;
+    std::int32_t dx = x1i - x0i;
+    std::int32_t dy = std::abs(y1i - y0i);
+    std::int32_t err = dx / 2;
+    std::int32_t ystep = (y0i < y1i) ? 1 : -1;
+    std::int32_t y = y0i;
 
-    for (i32 x = x0i; x <= x1i; ++x) {
+    for (std::int32_t x = x0i; x <= x1i; ++x) {
         if (steep)
             set_pixel(y, x, c);
         else
@@ -587,21 +599,21 @@ private:
     }
 }
 
-  static f64 fpart(f64 x)  { return x - std::floor(x); }
-  static f64 rfpart(f64 x) { return 1.0 - fpart(x); }
+  static double fpart(double x)  { return x - std::floor(x); }
+  static double rfpart(double x) { return 1.0 - fpart(x); }
 
-  void plot(i32 x, i32 y, Color c, f64 brightness) {
-    set_pixel(x, y, {c.r, c.g, c.b, static_cast<u32>(c.a * brightness)});
+  void plot(std::int32_t x, std::int32_t y, Color c, double brightness) {
+    set_pixel(x, y, {c.r, c.g, c.b, static_cast<std::uint32_t>(c.a * brightness)});
   }
 
-  u32 width_ = 0, height_ = 0;
-  AlignedBuffer<u8> pixels_;
+  std::uint32_t width_ = 0, height_ = 0;
+  AlignedBuffer<std::uint8_t> pixels_;
 };
 
 // Internal: 5*7 bitmap font, no external font dependency
 namespace font {
 
-struct Glyph { u8 rows[7]; };
+struct Glyph { std::uint8_t rows[7]; };
 
 inline const Glyph& get_glyph(char ch) {
   static const bool init = []() -> bool { return true; }();
@@ -611,8 +623,8 @@ inline const Glyph& get_glyph(char ch) {
   static bool built = false;
   if (!built) {
     built = true;
-    auto set = [&](char c, u8 r0, u8 r1, u8 r2, u8 r3, u8 r4, u8 r5, u8 r6) {
-      auto& g = table[static_cast<u8>(c)];
+    auto set = [&](char c, std::uint8_t r0, std::uint8_t r1, std::uint8_t r2, std::uint8_t r3, std::uint8_t r4, std::uint8_t r5, std::uint8_t r6) {
+      auto& g = table[static_cast<std::uint8_t>(c)];
       g.rows[0]=r0; g.rows[1]=r1; g.rows[2]=r2; g.rows[3]=r3;
       g.rows[4]=r4; g.rows[5]=r5; g.rows[6]=r6;
     };
@@ -702,7 +714,7 @@ inline const Glyph& get_glyph(char ch) {
     fb.rows[4]=0x11; fb.rows[5]=0x11; fb.rows[6]=0x1F;
   }
 
-  u8 idx = static_cast<u8>(ch);
+  std::uint8_t idx = static_cast<std::uint8_t>(ch);
   if (idx < 32 || idx > 126) idx = 127;
   return table[idx];
 }
@@ -710,15 +722,15 @@ inline const Glyph& get_glyph(char ch) {
 } // NS font
 
 // Internal: text rendering helpers used only by Figure render passes
-inline void draw_text(Canvas& canvas, const std::string& text, i32 x, i32 y, Color color, i32 scale = 1) {
-  i32 cursor_x = x;
+inline void draw_text(Canvas& canvas, const std::string& text, std::int32_t x, std::int32_t y, Color color, std::int32_t scale = 1) {
+  std::int32_t cursor_x = x;
   for (char ch : text) {
     const auto& g = font::get_glyph(ch);
-    for (i32 row = 0; row < 7; ++row)
-      for (i32 col = 0; col < 5; ++col)
+    for (std::int32_t row = 0; row < 7; ++row)
+      for (std::int32_t col = 0; col < 5; ++col)
         if (g.rows[row] & (0x10 >> col))
-          for (i32 sy = 0; sy < scale; ++sy)
-            for (i32 sx = 0; sx < scale; ++sx)
+          for (std::int32_t sy = 0; sy < scale; ++sy)
+            for (std::int32_t sx = 0; sx < scale; ++sx)
               canvas.set_pixel(
                 cursor_x + col * scale + sx,
                 y + row * scale + sy, 
@@ -731,18 +743,18 @@ inline void draw_text(Canvas& canvas, const std::string& text, i32 x, i32 y, Col
 inline void draw_text_vertical(
   Canvas& canvas, 
   const std::string& text,
-  i32 x, i32 y, Color color, i32 scale = 1
+  std::int32_t x, std::int32_t y, Color color, std::int32_t scale = 1
 ) {
 
-  i32 lh = static_cast<i32>(text.size()) * 6 * scale - scale;
-  i32 cursor_y = y + lh - 5 * scale;
+  std::int32_t lh = static_cast<std::int32_t>(text.size()) * 6 * scale - scale;
+  std::int32_t cursor_y = y + lh - 5 * scale;
   for (char ch : text) {
     const auto& g = font::get_glyph(ch);
-    for (i32 row = 0; row < 7; ++row)
-      for (i32 col = 0; col < 5; ++col)
+    for (std::int32_t row = 0; row < 7; ++row)
+      for (std::int32_t col = 0; col < 5; ++col)
         if (g.rows[row] & (0x10 >> col))
-          for (i32 sy = 0; sy < scale; ++sy)
-            for (i32 sx = 0; sx < scale; ++sx)
+          for (std::int32_t sy = 0; sy < scale; ++sy)
+            for (std::int32_t sx = 0; sx < scale; ++sx)
               canvas.set_pixel(
                 x + row * scale + sx,
                 cursor_y + (4 - col) * scale + sy, 
@@ -752,58 +764,58 @@ inline void draw_text_vertical(
   }
 }
 
-inline i32 text_width(const std::string& text, i32 scale = 1) {
+inline std::int32_t text_width(const std::string& text, std::int32_t scale = 1) {
   if (text.empty()) return 0;
-  return static_cast<i32>(text.size()) * 6 * scale - scale;
+  return static_cast<std::int32_t>(text.size()) * 6 * scale - scale;
 }
-inline i32 text_height(i32 scale = 1) { return 7 * scale; }
-inline i32 text_width_vertical(i32 /*text_len*/, i32 scale = 1) { return 7 * scale; }
-inline i32 text_height_vertical(const std::string& text, i32 scale = 1) {
+inline std::int32_t text_height(std::int32_t scale = 1) { return 7 * scale; }
+inline std::int32_t text_width_vertical(std::int32_t /*text_len*/, std::int32_t scale = 1) { return 7 * scale; }
+inline std::int32_t text_height_vertical(const std::string& text, std::int32_t scale = 1) {
   if (text.empty()) return 0;
-  return static_cast<i32>(text.size()) * 6 * scale - scale;
+  return static_cast<std::int32_t>(text.size()) * 6 * scale - scale;
 }
 
 // Internal: tick generation for axes.
 struct Tick {
-  f64         value;
+  double         value;
   std::string label;
   bool        is_minor = false;
 };
 
 class TickEngine {
 public:
-  static std::vector<Tick> compute(f64 lo, f64 hi, usize target_ticks = 6, bool include_minor = false, ScaleType scale = ScaleType::Linear) {
+  static std::vector<Tick> compute(double lo, double hi, std::size_t target_ticks = 6, bool include_minor = false, ScaleType scale = ScaleType::Linear) {
     if (scale == ScaleType::Log) return compute_log(lo, hi, include_minor);
     return compute_linear(lo, hi, target_ticks, include_minor);
   }
 
 private:
-  static std::vector<Tick> compute_linear(f64 lo, f64 hi, usize target_ticks, bool include_minor) {
+  static std::vector<Tick> compute_linear(double lo, double hi, std::size_t target_ticks, bool include_minor) {
     std::vector<Tick> ticks;
     if (hi <= lo) return ticks;
 
-    f64 range      = hi - lo;
-    f64 rough_step = range / static_cast<f64>(target_ticks);
-    f64 mag        = std::pow(10.0, std::floor(std::log10(rough_step)));
-    f64 norm       = rough_step / mag;
+    double range      = hi - lo;
+    double rough_step = range / static_cast<double>(target_ticks);
+    double mag        = std::pow(10.0, std::floor(std::log10(rough_step)));
+    double norm       = rough_step / mag;
 
-    f64 nice;
+    double nice;
     if      (norm < 1.5) nice = 1.0;
     else if (norm < 3.0) nice = 2.0;
     else if (norm < 7.0) nice = 5.0;
     else                 nice = 10.0;
 
-    f64 step  = nice * mag;
-    f64 start = std::floor(lo / step) * step;
+    double step  = nice * mag;
+    double start = std::floor(lo / step) * step;
 
-    for (f64 v = start; v <= hi + step * 0.001; v += step) {
+    for (double v = start; v <= hi + step * 0.001; v += step) {
       if (v < lo - step * 0.001) continue;
       ticks.push_back({v, format_value(v, step), false});
 
       if (include_minor) {
-        f64 minor_step = step / 5.0;
+        double minor_step = step / 5.0;
         for (int m = 1; m < 5; ++m) {
-          f64 mv = v + m * minor_step;
+          double mv = v + m * minor_step;
 
           if (mv > lo && mv < hi) ticks.push_back({mv, "", true});
         }
@@ -812,7 +824,7 @@ private:
     return ticks;
   }
 
-  static std::vector<Tick> compute_log(f64 lo, f64 hi, bool include_minor) {
+  static std::vector<Tick> compute_log(double lo, double hi, bool include_minor) {
     std::vector<Tick> ticks;
     if (hi <= 0 || lo <= 0) return ticks;
 
@@ -820,18 +832,18 @@ private:
     int exp_hi = static_cast<int>(std::ceil(std::log10(hi)));
 
     for (int e = exp_lo; e <= exp_hi; ++e) {
-      f64 val = std::pow(10.0, e);
+      double val = std::pow(10.0, e);
       if (val >= lo && val <= hi) ticks.push_back({val, format_log_value(val), false});
       if (include_minor)
         for (int m = 2; m <= 9; ++m) {
-          f64 mv = m * val;
+          double mv = m * val;
           if (mv > lo && mv < hi) ticks.push_back({mv, "", true});
         }
     }
     return ticks;
   }
 
-  static std::string format_value(f64 v, f64 step) {
+  static std::string format_value(double v, double step) {
     char buf[64];
     if (step >= 1.0 && std::abs(v) < 1e12) {
       if (std::abs(v - std::round(v)) < 1e-9) 
@@ -846,7 +858,7 @@ private:
     return buf;
   }
 
-  static std::string format_log_value(f64 v) {
+  static std::string format_log_value(double v) {
     char buf[64];
     if (v >= 1.0 && v < 1e7) 
       std::snprintf(buf, sizeof(buf), "%.0f", v);
@@ -870,31 +882,31 @@ public:
     x_log_ = (x_scale == ScaleType::Log);
     y_log_ = (y_scale == ScaleType::Log);
 
-    f64 x_lo = x_log_ ? safe_log10(data_box.x_min) : data_box.x_min;
-    f64 x_hi = x_log_ ? safe_log10(data_box.x_max) : data_box.x_max;
-    f64 y_lo = y_log_ ? safe_log10(data_box.y_min) : data_box.y_min;
-    f64 y_hi = y_log_ ? safe_log10(data_box.y_max) : data_box.y_max;
+    double x_lo = x_log_ ? safe_log10(data_box.x_min) : data_box.x_min;
+    double x_hi = x_log_ ? safe_log10(data_box.x_max) : data_box.x_max;
+    double y_lo = y_log_ ? safe_log10(data_box.y_min) : data_box.y_min;
+    double y_hi = y_log_ ? safe_log10(data_box.y_max) : data_box.y_max;
 
-    f64 dw = x_hi - x_lo, dh = y_hi - y_lo;
+    double dw = x_hi - x_lo, dh = y_hi - y_lo;
     sx_ = (dw > 0) ? pixel_rect.w / dw : 1.0;
     sy_ = (dh > 0) ? pixel_rect.h / dh : 1.0;
     log_x_lo_ = x_lo; log_y_lo_ = y_lo;
   }
 
-  inline f64 to_px_x(f64 x) const {
-    f64 v = x_log_ ? safe_log10(x) : x;
+  inline double to_px_x(double x) const {
+    double v = x_log_ ? safe_log10(x) : x;
     return rect_.x + (v - log_x_lo_) * sx_;
   }
-  inline f64 to_px_y(f64 y) const {
-    f64 v = y_log_ ? safe_log10(y) : y;
+  inline double to_px_y(double y) const {
+    double v = y_log_ ? safe_log10(y) : y;
     return rect_.y + rect_.h - (v - log_y_lo_) * sy_;
   }
-  inline f64 to_data_x(f64 px) const {
-    f64 v = log_x_lo_ + (px - rect_.x) / sx_;
+  inline double to_data_x(double px) const {
+    double v = log_x_lo_ + (px - rect_.x) / sx_;
     return x_log_ ? std::pow(10.0, v) : v;
   }
-  inline f64 to_data_y(f64 py) const {
-    f64 v = log_y_lo_ + (rect_.y + rect_.h - py) / sy_;
+  inline double to_data_y(double py) const {
+    double v = log_y_lo_ + (rect_.y + rect_.h - py) / sy_;
     return y_log_ ? std::pow(10.0, v) : v;
   }
 
@@ -902,12 +914,12 @@ public:
   const detail::Rect& pixel_rect() const { return rect_; }
 
 private:
-  static inline f64 safe_log10(f64 v) { return std::log10(v > 1e-300 ? v : 1e-300); }
+  static inline double safe_log10(double v) { return std::log10(v > 1e-300 ? v : 1e-300); }
 
   BBox        data_;
   detail::Rect rect_;
-  f64  sx_ = 1.0, sy_ = 1.0;
-  f64  log_x_lo_ = 0.0, log_y_lo_ = 0.0;
+  double  sx_ = 1.0, sy_ = 1.0;
+  double  log_x_lo_ = 0.0, log_y_lo_ = 0.0;
   bool x_log_ = false, y_log_ = false;
 };
 
@@ -921,21 +933,22 @@ inline bool write_ppm(const rendering::Canvas& canvas, const std::string& path) 
   std::ofstream f(path, std::ios::binary);
   if (!f.is_open()) return false;
 
-  const u8* data = canvas.data();
-  usize w = canvas.width(), h = canvas.height();
-  usize row_bytes = w * 3;
-  std::vector<u8> row(row_bytes);
+  const std::uint8_t* data = canvas.data();
+  std::size_t w = canvas.width(), h = canvas.height();
+  std::size_t row_bytes = w * 3;
+  std::vector<std::uint8_t> row(row_bytes);
 
   f << "P6\n" << w << " " << h << "\n255\n";
 
   // Assemble each RGB row in memory, then write it in one call instead of three put() per pixel.
-  for (usize y = 0; y < h; ++y) {
-    const u8* src = data + (y * w) * 4;
-    for (usize x = 0; x < w; ++x) {
-      usize s = x * 4, d = x * 3;
+  for (std::size_t y = 0; y < h; ++y) {
+    const std::uint8_t* src = data + (y * w) * 4;
+    for (std::size_t x = 0; x < w; ++x) {
+      std::size_t s = x * 4, d = x * 3;
       row[d + 0] = src[s + 0];
       row[d + 1] = src[s + 1];
       row[d + 2] = src[s + 2];
+
     }
     f.write(reinterpret_cast<const char*>(row.data()), static_cast<std::streamsize>(row_bytes));
   }
@@ -948,27 +961,31 @@ inline bool write_ppm(const rendering::Canvas& canvas, const std::string& path) 
 // --- Public: plot2d -------------------------------------------------------
 namespace plot2d {
 
-using SeriesVariant = std::variant<data::Series, data::ExternalSeries>;
+template <typename T = typename scalar_traits<>::type>
+using SeriesVariant = std::variant<data::Series<T>, data::ExternalSeries<T>>;
 
+template <typename T = typename scalar_traits<>::type>
 struct PlotEntry {
-  SeriesVariant     series;
+  SeriesVariant<T> series;
   params::DataStyle style;
 
-  data::DataView x_view() const { return std::visit([](auto& s){ return s.x_view(); }, series); }
-  data::DataView y_view() const { return std::visit([](auto& s){ return s.y_view(); }, series); }
-  usize          size()   const { return std::visit([](auto& s){ return s.size();   }, series); }
-  BBox           bounds() const { return std::visit([](auto& s){ return s.bounds(); }, series); }
+  data::DataView<T> x_view() const { return std::visit([](auto& s){ return s.x_view(); }, series); }
+  data::DataView<T> y_view() const { return std::visit([](auto& s){ return s.y_view(); }, series); }
+  std::size_t       size()   const { return std::visit([](auto& s){ return s.size();   }, series); }
+  BBox              bounds() const { return std::visit([](auto& s){ return s.bounds(); }, series); }
 };
 
+template <typename T>
 class Figure;
 
+template <typename T = typename scalar_traits<>::type>
 class PlotCommand {
 public:
-  PlotCommand(Figure& fig, data::Series&& series) : 
+  PlotCommand(Figure<T>& fig, data::Series<T>&& series) : 
     fig_(fig), entry_{std::move(series), {}} 
   {}
 
-  PlotCommand(Figure& fig, data::ExternalSeries&& series) : 
+  PlotCommand(Figure<T>& fig, data::ExternalSeries<T>&& series) : 
     fig_(fig), entry_{std::move(series), {}} 
   {}
 
@@ -979,12 +996,12 @@ public:
   }
 
   PlotCommand& color(Color c)              { entry_.style.color      = c; entry_.style.auto_color = false; return *this; }
-  PlotCommand& width(f64 w)                { entry_.style.width      = w;    return *this; }
-  PlotCommand& alpha(f64 a)                { entry_.style.alpha      = a;    return *this; }
+  PlotCommand& width(double w)             { entry_.style.width      = w; return *this; }
+  PlotCommand& alpha(double a)             { entry_.style.alpha      = a; return *this; }
   PlotCommand& label(const std::string& l) { entry_.style.label      = l;    return *this; }
   PlotCommand& line(LineStyle s)           { entry_.style.line_style = s;    return *this; }
 
-  PlotCommand& marker(MarkerStyle m, f64 size = 4.0) {
+  PlotCommand& marker(MarkerStyle m, double size = 4.0) {
     entry_.style.marker      = m;
     entry_.style.marker_size = size;
     return *this;
@@ -999,18 +1016,19 @@ public:
   ~PlotCommand();
 
 private:
-  Figure&   fig_;
-  PlotEntry entry_;
+  Figure<T>& fig_;
+  PlotEntry<T> entry_;
   bool      committed_ = false;
 
   void commit();
-  friend class Figure;
+  friend class Figure<T>;
 };
 
+template <typename T = typename scalar_traits<>::type>
 class Figure {
 public:
-  Figure(f64 width, f64 height) : 
-    canvas_(static_cast<u32>(width), static_cast<u32>(height)), 
+  Figure(double width, double height) : 
+    canvas_(static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)), 
     fig_w_(width), fig_h_(height) 
   {}
 
@@ -1026,15 +1044,16 @@ public:
   void perf(const params::PerfParams& p)    { perf_         = p; }
 
   
-  // LINE PLOTS
-  inline PlotCommand plot(const f64* x, const f64* y, usize n) {
-    return PlotCommand(*this, data::Series(x, y, n));
+  // LINE PLOTS. Input type S is deduced from the pointers and stored/computed in T.
+  template <typename S>
+  inline PlotCommand<T> plot(const S* x, const S* y, std::size_t n) {
+    return PlotCommand<T>(*this, data::Series<T>(x, y, n));
   }
-  inline PlotCommand plot(data::Series&& s) {
-    return PlotCommand(*this, std::move(s));
+  inline PlotCommand<T> plot(data::Series<T>&& s) {
+    return PlotCommand<T>(*this, std::move(s));
   }
-  inline PlotCommand plot_ref(const f64* x, const f64* y, usize n, usize stride = 1) {
-    return PlotCommand(*this, data::ExternalSeries(x, y, n, stride));
+  inline PlotCommand<T> plot_ref(const T* x, const T* y, std::size_t n, std::size_t stride = 1) {
+    return PlotCommand<T>(*this, data::ExternalSeries<T>(x, y, n, stride));
   }
 
   void render() {
@@ -1056,12 +1075,12 @@ public:
     return output::write_ppm(canvas_, path);
   }
 
-  const std::vector<PlotEntry>& entries() const { return entries_; }
+  const std::vector<PlotEntry<T>>& entries() const { return entries_; }
 
 private:
-  friend class PlotCommand;
+  friend class PlotCommand<T>;
 
-  void add_entry(PlotEntry&& e) {
+  void add_entry(PlotEntry<T>&& e) {
     if (e.style.auto_color) {
       e.style.color = kAutoPalette[auto_color_index_ % kAutoPalette.size()];
       e.style.auto_color = false;
@@ -1083,33 +1102,33 @@ private:
     data_bounds_ = {};
     for (auto& e : entries_) data_bounds_.merge(e.bounds());
 
-    if (std::bit_cast<u64>(axis_style_.x_min)) data_bounds_.x_min = axis_style_.x_min;
-    if (std::bit_cast<u64>(axis_style_.x_max)) data_bounds_.x_max = axis_style_.x_max;
-    if (std::bit_cast<u64>(axis_style_.y_min)) data_bounds_.y_min = axis_style_.y_min;
-    if (std::bit_cast<u64>(axis_style_.y_max)) data_bounds_.y_max = axis_style_.y_max;
+    if (std::bit_cast<std::uint64_t>(axis_style_.x_min)) data_bounds_.x_min = axis_style_.x_min;
+    if (std::bit_cast<std::uint64_t>(axis_style_.x_max)) data_bounds_.x_max = axis_style_.x_max;
+    if (std::bit_cast<std::uint64_t>(axis_style_.y_min)) data_bounds_.y_min = axis_style_.y_min;
+    if (std::bit_cast<std::uint64_t>(axis_style_.y_max)) data_bounds_.y_max = axis_style_.y_max;
 
     if (!data_bounds_.empty()) {
       if (axis_style_.x_scale == ScaleType::Log && data_bounds_.x_min > 0) {
-        f64 log_lo = std::log10(data_bounds_.x_min);
-        f64 log_hi = std::log10(data_bounds_.x_max);
-        f64 pad = (log_hi - log_lo) * 0.05; if (pad == 0) pad = 0.15;
+        double log_lo = std::log10(data_bounds_.x_min);
+        double log_hi = std::log10(data_bounds_.x_max);
+        double pad = (log_hi - log_lo) * 0.05; if (pad == 0) pad = 0.15;
 
         data_bounds_.x_min = std::pow(10.0, log_lo - pad);
         data_bounds_.x_max = std::pow(10.0, log_hi + pad);
       } else {
-        f64 xpad = data_bounds_.width() * 0.05; if (xpad == 0) xpad = 1.0;
+        double xpad = data_bounds_.width() * 0.05; if (xpad == 0) xpad = 1.0;
         data_bounds_.x_min -= xpad; data_bounds_.x_max += xpad;
       }
 
       if (axis_style_.y_scale == ScaleType::Log && data_bounds_.y_min > 0) {
-        f64 log_lo = std::log10(data_bounds_.y_min);
-        f64 log_hi = std::log10(data_bounds_.y_max);
-        f64 pad = (log_hi - log_lo) * 0.05; if (pad == 0) pad = 0.15;
+        double log_lo = std::log10(data_bounds_.y_min);
+        double log_hi = std::log10(data_bounds_.y_max);
+        double pad = (log_hi - log_lo) * 0.05; if (pad == 0) pad = 0.15;
 
         data_bounds_.y_min = std::pow(10.0, log_lo - pad);
         data_bounds_.y_max = std::pow(10.0, log_hi + pad);
       } else {
-        f64 ypad = data_bounds_.height() * 0.05; if (ypad == 0) ypad = 1.0;
+        double ypad = data_bounds_.height() * 0.05; if (ypad == 0) ypad = 1.0;
         data_bounds_.y_min -= ypad; data_bounds_.y_max += ypad;
       }
     }
@@ -1140,23 +1159,23 @@ private:
 
 
     for (auto& t : xticks) {
-      f64 px = transform_.to_px_x(t.value);
+      double px = transform_.to_px_x(t.value);
       Color c  = t.is_minor ? grid_style_.minor_color : grid_style_.major_color;
-      f64 w  = t.is_minor ? grid_style_.minor_width : grid_style_.major_width;
-      f64 a  = t.is_minor ? grid_style_.minor_alpha : grid_style_.major_alpha;
+      double w  = t.is_minor ? grid_style_.minor_width : grid_style_.major_width;
+      double a  = t.is_minor ? grid_style_.minor_alpha : grid_style_.major_alpha;
 
-      c = c.with_alpha(static_cast<u32>(a * 255));
+      c = c.with_alpha(static_cast<std::uint32_t>(a * 255));
       canvas_.draw_line(px, plot_area_.y, px, plot_area_.y + plot_area_.h, c, w, false);
     }
 
 
     for (auto& t : yticks) {
-      f64 py = transform_.to_px_y(t.value);
+      double py = transform_.to_px_y(t.value);
       Color c  = t.is_minor ? grid_style_.minor_color : grid_style_.major_color;
-      f64 w  = t.is_minor ? grid_style_.minor_width : grid_style_.major_width;
-      f64 a  = t.is_minor ? grid_style_.minor_alpha : grid_style_.major_alpha;
+      double w  = t.is_minor ? grid_style_.minor_width : grid_style_.major_width;
+      double a  = t.is_minor ? grid_style_.minor_alpha : grid_style_.major_alpha;
 
-      c = c.with_alpha(static_cast<u32>(a * 255));
+      c = c.with_alpha(static_cast<std::uint32_t>(a * 255));
       canvas_.draw_line(plot_area_.x, py, plot_area_.x + plot_area_.w, py, c, w, false);
     }
   }
@@ -1164,9 +1183,9 @@ private:
   void render_axes() {
     if (!axis_style_.show) return;
     Color c = axis_style_.color;
-    f64 w = axis_style_.width;
-    f64 x0 = plot_area_.x, y0 = plot_area_.y;
-    f64 x1 = x0 + plot_area_.w, y1 = y0 + plot_area_.h;
+    double w = axis_style_.width;
+    double x0 = plot_area_.x, y0 = plot_area_.y;
+    double x1 = x0 + plot_area_.w, y1 = y0 + plot_area_.h;
 
     canvas_.draw_line(x0, y0, x1, y0, c, w, false);
     canvas_.draw_line(x1, y0, x1, y1, c, w, false);
@@ -1184,17 +1203,17 @@ private:
 
 
     for (auto& t : xticks) {
-      f64 px = transform_.to_px_x(t.value);
+      double px = transform_.to_px_x(t.value);
       canvas_.draw_line(px, y1, px, y1 + axis_style_.tick_size, c, w, false);
 
       if (!t.label.empty()) {
-        i32 tw = rendering::text_width(t.label, 1);
+        std::int32_t tw = rendering::text_width(t.label, 1);
 
         rendering::draw_text(
           canvas_, 
           t.label,
-          static_cast<i32>(px) - tw / 2,
-          static_cast<i32>(y1 + axis_style_.tick_size + 3),
+          static_cast<std::int32_t>(px) - tw / 2,
+          static_cast<std::int32_t>(y1 + axis_style_.tick_size + 3),
           text_style_.color, 
           1
         );
@@ -1211,17 +1230,17 @@ private:
 
 
     for (auto& t : yticks) {
-      f64 py = transform_.to_px_y(t.value);
+      double py = transform_.to_px_y(t.value);
       canvas_.draw_line(x0 - axis_style_.tick_size, py, x0, py, c, w, false);
 
 
       if (!t.label.empty()) {
-        i32 tw = rendering::text_width(t.label, 1);
+        std::int32_t tw = rendering::text_width(t.label, 1);
         rendering::draw_text(
           canvas_, 
           t.label,
-          static_cast<i32>(x0 - axis_style_.tick_size - 3) - tw,
-          static_cast<i32>(py) - 3,
+          static_cast<std::int32_t>(x0 - axis_style_.tick_size - 3) - tw,
+          static_cast<std::int32_t>(py) - 3,
           text_style_.color, 
           1
         );
@@ -1234,23 +1253,24 @@ private:
       auto xv = entry.x_view(), yv = entry.y_view();
       const auto& st = entry.style;
 
-      data::DataView rx = xv, ry = yv;
-      data::Series decimated;
+      data::DataView<T> rx = xv, ry = yv;
+      data::Series<T> decimated;
 
       if (perf_.lod_enable) {
         if (xv.count >= perf_.lod_target_points) {
-          decimated = data::LttbDecimator::decimate(xv, yv, perf_.lod_target_points);
+          decimated = data::LttbDecimator<T>::decimate(xv, yv, perf_.lod_target_points);
           rx = decimated.x_view();
           ry = decimated.y_view();
         }
       }
 
       Color c = st.color;
-      if (st.alpha < 1.0) c = c.with_alpha(static_cast<u32>(st.alpha * 255));
+      if (st.alpha < 1.0) c = c.with_alpha(static_cast<std::uint32_t>(st.alpha * 255));
 
       if (st.line_style != LineStyle::None && rx.count > 1) {
-        for (usize i = 1; i < rx.count; ++i) {
-          f64 x0 = rx[i-1], y0 = ry[i-1], x1 = rx[i], y1 = ry[i];
+        for (std::size_t i = 1; i < rx.count; ++i) {
+          double x0 = static_cast<double>(rx[i-1]), y0 = static_cast<double>(ry[i-1]);
+          double x1 = static_cast<double>(rx[i]), y1 = static_cast<double>(ry[i]);
           if (std::isnan(x0) || std::isnan(y0) || std::isnan(x1) || std::isnan(y1)) continue;
           canvas_.draw_line(
             transform_.to_px_x(x0), transform_.to_px_y(y0),
@@ -1262,23 +1282,23 @@ private:
       }
 
       if (st.fill && rx.count > 1) {
-        f64 base_py = transform_.to_px_y(data_bounds_.y_min);
-        for (usize i = 0; i < rx.count; ++i) {
+        double base_py = transform_.to_px_y(data_bounds_.y_min);
+        for (std::size_t i = 0; i < rx.count; ++i) {
           if (std::isnan(rx[i]) || std::isnan(ry[i])) continue;
-          i32 ix     = static_cast<i32>(transform_.to_px_x(rx[i]));
-          i32 iy_top = static_cast<i32>(transform_.to_px_y(ry[i]));
-          i32 iy_bot = static_cast<i32>(base_py);
-          for (i32 y = iy_top; y <= iy_bot; ++y)
+          std::int32_t ix     = static_cast<std::int32_t>(transform_.to_px_x(static_cast<double>(rx[i])));
+          std::int32_t iy_top = static_cast<std::int32_t>(transform_.to_px_y(static_cast<double>(ry[i])));
+          std::int32_t iy_bot = static_cast<std::int32_t>(base_py);
+          for (std::int32_t y = iy_top; y <= iy_bot; ++y)
             canvas_.set_pixel(ix, y, st.fill_color);
         }
       }
 
       if (st.marker != MarkerStyle::None) {
-        for (usize i = 0; i < rx.count; ++i) {
+        for (std::size_t i = 0; i < rx.count; ++i) {
           if (std::isnan(rx[i]) || std::isnan(ry[i])) continue;
           canvas_.draw_circle(
-            static_cast<i32>(transform_.to_px_x(rx[i])),
-            static_cast<i32>(transform_.to_px_y(ry[i])),
+            static_cast<std::int32_t>(transform_.to_px_x(static_cast<double>(rx[i]))),
+            static_cast<std::int32_t>(transform_.to_px_y(static_cast<double>(ry[i]))),
             st.marker_size, 
             c
           );
@@ -1289,35 +1309,35 @@ private:
 
   void render_legend() {
     if (!legend_style_.show) return;
-    std::vector<const PlotEntry*> labeled;
+    std::vector<const PlotEntry<T>*> labeled;
     for (auto& e : entries_) if (!e.style.label.empty()) labeled.push_back(&e);
     if (labeled.empty()) return;
 
-    i32 scale  = 1;
-    i32 line_h = rendering::text_height(scale) + 4;
-    i32 max_w  = 0;
+    std::int32_t scale  = 1;
+    std::int32_t line_h = rendering::text_height(scale) + 4;
+    std::int32_t max_w  = 0;
 
 
     for (auto* e : labeled) {
-      i32 w = rendering::text_width(e->style.label, scale);
+      std::int32_t w = rendering::text_width(e->style.label, scale);
       if (w > max_w) max_w = w;
     }
 
-    i32 box_w = max_w + 30 + static_cast<i32>(legend_style_.padding * 2);
-    i32 box_h = static_cast<i32>(labeled.size()) * line_h
-      + static_cast<i32>(legend_style_.padding * 2);
+    std::int32_t box_w = max_w + 30 + static_cast<std::int32_t>(legend_style_.padding * 2);
+    std::int32_t box_h = static_cast<std::int32_t>(labeled.size()) * line_h
+      + static_cast<std::int32_t>(legend_style_.padding * 2);
 
 
-    i32 bx = static_cast<i32>(plot_area_.x + plot_area_.w) - box_w - 8;
-    i32 by = static_cast<i32>(plot_area_.y) + 8;
+    std::int32_t bx = static_cast<std::int32_t>(plot_area_.x + plot_area_.w) - box_w - 8;
+    std::int32_t by = static_cast<std::int32_t>(plot_area_.y) + 8;
 
     canvas_.fill_rect(bx, by, box_w, box_h, legend_style_.bg_color);
     canvas_.draw_rect(bx, by, box_w, box_h, legend_style_.border);
 
 
-    i32 ty = by + static_cast<i32>(legend_style_.padding);
+    std::int32_t ty = by + static_cast<std::int32_t>(legend_style_.padding);
     for (auto* e : labeled) {
-      i32 lx = bx + static_cast<i32>(legend_style_.padding);
+      std::int32_t lx = bx + static_cast<std::int32_t>(legend_style_.padding);
 
       canvas_.draw_line(
         lx, 
@@ -1335,29 +1355,29 @@ private:
   }
 
   void render_title_and_labels() {
-    i32 scale = 2;
+    std::int32_t scale = 2;
     if (!title_.empty()) {
-      i32 tw = rendering::text_width(title_, scale);
-      i32 tx = static_cast<i32>(fig_w_ / 2) - tw / 2;
+      std::int32_t tw = rendering::text_width(title_, scale);
+      std::int32_t tx = static_cast<std::int32_t>(fig_w_ / 2) - tw / 2;
       rendering::draw_text(canvas_, title_, tx, 8, text_style_.color, scale);
     }
     scale = 1;
     if (!xlabel_.empty()) {
-      i32 tw = rendering::text_width(xlabel_, scale);
-      i32 tx = static_cast<i32>(plot_area_.x + plot_area_.w / 2) - tw / 2;
-      i32 ty = static_cast<i32>(fig_h_) - 15;
+      std::int32_t tw = rendering::text_width(xlabel_, scale);
+      std::int32_t tx = static_cast<std::int32_t>(plot_area_.x + plot_area_.w / 2) - tw / 2;
+      std::int32_t ty = static_cast<std::int32_t>(fig_h_) - 15;
       rendering::draw_text(canvas_, xlabel_, tx, ty, text_style_.color, scale);
     }
     if (!ylabel_.empty()) {
-      i32 lh = rendering::text_height_vertical(ylabel_, scale);
-      i32 tx = 5;
-      i32 ty = static_cast<i32>(plot_area_.y + plot_area_.h / 2) - lh / 2;
+      std::int32_t lh = rendering::text_height_vertical(ylabel_, scale);
+      std::int32_t tx = 5;
+      std::int32_t ty = static_cast<std::int32_t>(plot_area_.y + plot_area_.h / 2) - lh / 2;
       rendering::draw_text_vertical(canvas_, ylabel_, tx, ty, text_style_.color, scale);
     }
   }
 
   rendering::Canvas         canvas_;
-  f64                       fig_w_, fig_h_;
+  double                       fig_w_, fig_h_;
   detail::Rect              plot_area_;
   BBox                      data_bounds_;
   rendering::CoordTransform transform_;
@@ -1371,12 +1391,15 @@ private:
   params::TextStyle   text_style_;
   params::PerfParams  perf_;
 
-  std::vector<PlotEntry> entries_;
-  usize auto_color_index_ = 0; // counts auto-assigned series, independent of total entries
+  std::vector<PlotEntry<T>> entries_;
+  std::size_t auto_color_index_ = 0; // counts auto-assigned series, independent of total entries
 };
 
-inline PlotCommand::~PlotCommand() { if (!committed_) commit(); }
-inline void PlotCommand::commit()  { fig_.add_entry(std::move(entry_)); committed_ = true; }
+
+template <typename T>
+inline PlotCommand<T>::~PlotCommand() { if (!committed_) commit(); }
+template <typename T>
+inline void PlotCommand<T>::commit()  { fig_.add_entry(std::move(entry_)); committed_ = true; }
 
 } // NS plot2d
 

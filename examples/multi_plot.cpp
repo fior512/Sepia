@@ -4,7 +4,7 @@
  // Sepia   main  !? ❯ g++ -std=c++20 -O2 -march=native examples/multi_plot.cpp src/plot2d/figure.cpp && ./a.out && loupe multi_plot.ppm 
 int main() {
   const size_t N = 300;
-  std::vector<Sepia::f64> x(N), y1(N), y2(N), y3(N);
+  std::vector<double> x(N), y1(N), y2(N), y3(N);
 
   for (size_t i = 0; i < N; ++i) {
     x[i]  = static_cast<double>(i) * 0.04;

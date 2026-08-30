@@ -7,9 +7,9 @@ using namespace Sepia::plot2d;
 using Clock = std::chrono::high_resolution_clock;
 
 int main() {
-  const usize n = 5'000'000ULL;
-  AlignedBuffer<f64> x(n), y(n);
-  for (usize i = 0; i < n; ++i) { x[i] = (f64)i; y[i] = (f64)(i % 1000); }
+  const std::size_t n = 5'000'000ULL;
+  AlignedBuffer<double> x(n), y(n);
+  for (std::size_t i = 0; i < n; ++i) { x[i] = (double)i; y[i] = (double)(i % 1000); }
 
   Figure f(800, 500);
   f.perf({.lod_enable = true, .lod_target_points = 2000});

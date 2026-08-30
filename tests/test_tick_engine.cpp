@@ -4,8 +4,8 @@
 using namespace Sepia;
 using namespace Sepia::rendering;
 
-static void check_in_range(const std::vector<Tick>& ticks, f64 lo, f64 hi) {
-    f64 pad = (hi - lo) * 0.05;
+static void check_in_range(const std::vector<Tick>& ticks, double lo, double hi) {
+    double pad = (hi - lo) * 0.05;
     for (auto& t : ticks) {
         CHECK(t.value >= lo - pad);
         CHECK(t.value <= hi + pad);
@@ -61,8 +61,8 @@ TEST_CASE("TickEngine log [1,1000] powers of 10") {
     auto ticks = TickEngine::compute(1, 1000, 6, false, ScaleType::Log);
     // exp_lo=floor(log10(1))=0, exp_hi=ceil(log10(1000))=3 -> 4 major ticks
     REQUIRE(ticks.size() == 4);
-    std::vector<f64> expected = {1.0, 10.0, 100.0, 1000.0};
-    for (usize i = 0; i < 4; ++i)
+    std::vector<double> expected = {1.0, 10.0, 100.0, 1000.0};
+    for (std::size_t i = 0; i < 4; ++i)
         CHECK(ticks[i].value == Catch::Approx(expected[i]).epsilon(expected[i] * 1e-9));
 }
 
@@ -70,8 +70,8 @@ TEST_CASE("TickEngine log [0.001,1] powers of 10") {
     auto ticks = TickEngine::compute(0.001, 1, 6, false, ScaleType::Log);
     // exp_lo=floor(log10(0.001))=-3, exp_hi=ceil(log10(1))=0 -> 4 major ticks
     REQUIRE(ticks.size() == 4);
-    std::vector<f64> expected = {0.001, 0.01, 0.1, 1.0};
-    for (usize i = 0; i < 4; ++i)
+    std::vector<double> expected = {0.001, 0.01, 0.1, 1.0};
+    for (std::size_t i = 0; i < 4; ++i)
         CHECK(ticks[i].value == Catch::Approx(expected[i]).epsilon(expected[i] * 1e-9));
 }
 
