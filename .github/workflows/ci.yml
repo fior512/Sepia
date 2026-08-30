@@ -52,3 +52,45 @@ jobs:
       - name: Test
         working-directory: build
         run: ctest --output-on-failure -C Release
+
+  sanitize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Catch2 amalgamated sources
+        run: |
+          curl -fsSL https://github.com/catchorg/Catch2/releases/download/v3.7.1/catch_amalgamated.hpp -o tests/catch_amalgamated.hpp
+          curl -fsSL https://github.com/catchorg/Catch2/releases/download/v3.7.1/catch_amalgamated.cpp -o tests/catch_amalgamated.cpp
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Test
+        working-directory: build
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --output-on-failure
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Catch2 amalgamated sources
+        run: |
+          curl -fsSL https://github.com/catchorg/Catch2/releases/download/v3.7.1/catch_amalgamated.hpp -o tests/catch_amalgamated.hpp
+          curl -fsSL https://github.com/catchorg/Catch2/releases/download/v3.7.1/catch_amalgamated.cpp -o tests/catch_amalgamated.cpp
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Benchmark
+        run: ./build/benchmarks/bench_quick
