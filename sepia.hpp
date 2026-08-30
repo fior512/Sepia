@@ -1224,9 +1224,11 @@ private:
 
       if (st.line_style != LineStyle::None && rx.count > 1) {
         for (usize i = 1; i < rx.count; ++i) {
+          f64 x0 = rx[i-1], y0 = ry[i-1], x1 = rx[i], y1 = ry[i];
+          if (std::isnan(x0) || std::isnan(y0) || std::isnan(x1) || std::isnan(y1)) continue;
           canvas_.draw_line(
-            transform_.to_px_x(rx[i-1]), transform_.to_px_y(ry[i-1]),
-            transform_.to_px_x(rx[i]),   transform_.to_px_y(ry[i]),
+            transform_.to_px_x(x0), transform_.to_px_y(y0),
+            transform_.to_px_x(x1), transform_.to_px_y(y1),
             c,
             st.width
           );
@@ -1236,6 +1238,7 @@ private:
       if (st.fill && rx.count > 1) {
         f64 base_py = transform_.to_px_y(data_bounds_.y_min);
         for (usize i = 0; i < rx.count; ++i) {
+          if (std::isnan(rx[i]) || std::isnan(ry[i])) continue;
           i32 ix     = static_cast<i32>(transform_.to_px_x(rx[i]));
           i32 iy_top = static_cast<i32>(transform_.to_px_y(ry[i]));
           i32 iy_bot = static_cast<i32>(base_py);
@@ -1246,6 +1249,7 @@ private:
 
       if (st.marker != MarkerStyle::None) {
         for (usize i = 0; i < rx.count; ++i) {
+          if (std::isnan(rx[i]) || std::isnan(ry[i])) continue;
           canvas_.draw_circle(
             static_cast<i32>(transform_.to_px_x(rx[i])),
             static_cast<i32>(transform_.to_px_y(ry[i])),
