@@ -921,18 +921,24 @@ inline bool write_ppm(const rendering::Canvas& canvas, const std::string& path) 
   std::ofstream f(path, std::ios::binary);
   if (!f.is_open()) return false;
 
-  f << "P6\n" << canvas.width() << " " << canvas.height() << "\n255\n";
-
   const u8* data = canvas.data();
   usize w = canvas.width(), h = canvas.height();
+  usize row_bytes = w * 3;
+  std::vector<u8> row(row_bytes);
 
-  for (usize y = 0; y < h; ++y)
+  f << "P6\n" << w << " " << h << "\n255\n";
+
+  // Assemble each RGB row in memory, then write it in one call instead of three put() per pixel.
+  for (usize y = 0; y < h; ++y) {
+    const u8* src = data + (y * w) * 4;
     for (usize x = 0; x < w; ++x) {
-      usize idx = (y * w + x) * 4;
-      f.put(static_cast<char>(data[idx + 0]));
-      f.put(static_cast<char>(data[idx + 1]));
-      f.put(static_cast<char>(data[idx + 2]));
+      usize s = x * 4, d = x * 3;
+      row[d + 0] = src[s + 0];
+      row[d + 1] = src[s + 1];
+      row[d + 2] = src[s + 2];
     }
+    f.write(reinterpret_cast<const char*>(row.data()), static_cast<std::streamsize>(row_bytes));
+  }
 
   return f.good();
 }
@@ -1244,9 +1250,11 @@ private:
 
       if (st.line_style != LineStyle::None && rx.count > 1) {
         for (usize i = 1; i < rx.count; ++i) {
+          f64 x0 = rx[i-1], y0 = ry[i-1], x1 = rx[i], y1 = ry[i];
+          if (std::isnan(x0) || std::isnan(y0) || std::isnan(x1) || std::isnan(y1)) continue;
           canvas_.draw_line(
-            transform_.to_px_x(rx[i-1]), transform_.to_px_y(ry[i-1]),
-            transform_.to_px_x(rx[i]),   transform_.to_px_y(ry[i]),
+            transform_.to_px_x(x0), transform_.to_px_y(y0),
+            transform_.to_px_x(x1), transform_.to_px_y(y1),
             c,
             st.width
           );
@@ -1256,6 +1264,7 @@ private:
       if (st.fill && rx.count > 1) {
         f64 base_py = transform_.to_px_y(data_bounds_.y_min);
         for (usize i = 0; i < rx.count; ++i) {
+          if (std::isnan(rx[i]) || std::isnan(ry[i])) continue;
           i32 ix     = static_cast<i32>(transform_.to_px_x(rx[i]));
           i32 iy_top = static_cast<i32>(transform_.to_px_y(ry[i]));
           i32 iy_bot = static_cast<i32>(base_py);
@@ -1266,6 +1275,7 @@ private:
 
       if (st.marker != MarkerStyle::None) {
         for (usize i = 0; i < rx.count; ++i) {
+          if (std::isnan(rx[i]) || std::isnan(ry[i])) continue;
           canvas_.draw_circle(
             static_cast<i32>(transform_.to_px_x(rx[i])),
             static_cast<i32>(transform_.to_px_y(ry[i])),

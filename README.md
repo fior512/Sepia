@@ -144,7 +144,7 @@ figure.plot(x, y, n)
 |--------|-----------|
 | `DataStyle` | `color`, `width`, `alpha`, `line_style`, `marker`, `marker_size`, `fill`, `fill_color`, `label` |
 | `GridStyle` | `show`, `major_color`, `minor_color`, `major_width`, `minor_width`, `show_minor` |
-| `AxisStyle` | `show`, `color`, `width`, `tick_size`, `x_min/x_max/y_min/y_max` (-1=no default) |
+| `AxisStyle` | `show`, `color`, `width`, `tick_size`, `x_min/x_max/y_min/y_max` (0 means auto) |
 | `LegendStyle` | `show`, `bg_color`, `border`, `padding`, `position` |
 | `LayoutStyle` | `margin_top/bottom/left/right`, `background` |
 | `TextStyle` | `color`, `font_size`, `font_face` |
@@ -196,7 +196,7 @@ figure.plot(std::move(series));
 
 ### LTTB Decimation (Level-of-Detail)
 
-When `enable_lod` is `true` (the default) automatically downsampled to `lod_target_points` using the **Largest-Triangle-Three-Buckets** algorithm before rendering. This preserves visual shape while keeping render times constant regardless of input size.
+When `lod_enable` is `true` (the default) data is automatically downsampled to `lod_target_points` using the **Largest-Triangle-Three-Buckets** algorithm before rendering. This preserves visual shape while keeping render times constant regardless of input size.
 
 ```cpp
 // Defaults (in PerfParams):
@@ -207,7 +207,7 @@ When `enable_lod` is `true` (the default) automatically downsampled to `lod_targ
 figure.perf({.lod_enable = true, .lod_target_points = 5000});
 
 // Disable decimation entirely
-figure.perf({.enable_lod = false});
+figure.perf({.lod_enable = false});
 ```
 
 The decimation is lazy, it happens during `render()` and does not modify your original data.
