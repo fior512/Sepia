@@ -302,6 +302,9 @@ struct DataView {
   std::size_t    count  = 0;
   std::size_t    stride = 1;
 
+  DataView() = default;
+  DataView(const T* p, std::size_t c, std::size_t s = 1) : ptr(p), count(c), stride(s) {}
+
   T     operator[](std::size_t i) const { return ptr[i * stride]; }
   bool  empty() const { return count == 0 || ptr == nullptr; }
 };
