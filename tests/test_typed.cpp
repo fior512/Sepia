@@ -41,6 +41,13 @@ TEST_CASE("Series<float> keeps float storage and double bounds math") {
   CHECK(s.bounds().y_max == Catch::Approx(8.0));
 }
 
+TEST_CASE("Series<float> converts deduced double input") {
+  double x[] = {0.5, 1.5, 2.5}, y[] = {1.25, 3.75, 9.5};
+  data::Series<float> s(x, y, 3);
+  CHECK(s.x_data()[1] == Catch::Approx(1.5f));
+  CHECK(s.y_data()[2] == Catch::Approx(9.5f));
+}
+
 TEST_CASE("LttbDecimator<float> preserves endpoints") {
   std::vector<float> x(100), y(100);
   for (std::size_t i = 0; i < 100; ++i) { x[i] = (float)i; y[i] = (float)(i % 7); }

@@ -323,7 +323,8 @@ public:
   }
 
   // Input type S is deduced from the pointers and converted to T (compress or widen).
-  template <typename S>
+  // Disabled when S == T so braced CTAD is not ambiguous with the memcpy constructor.
+  template <typename S, typename = std::enable_if_t<!std::is_same_v<T, S>>>
   Series(const S* x, const S* y, std::size_t n) : x_(n), y_(n) {
     for (std::size_t i = 0; i < n; ++i) { x_[i] = static_cast<T>(x[i]); y_[i] = static_cast<T>(y[i]); }
     recompute_bounds();
