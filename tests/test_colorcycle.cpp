@@ -7,7 +7,7 @@ using namespace Sepia::plot2d;
 
 TEST_CASE("Default series colors cycle") {
   Figure f(400, 200);
-  std::vector<f64> x{0, 1}, y{0, 1};
+  std::vector<double> x{0, 1}, y{0, 1};
   f.plot(x.data(), y.data(), 2);
   f.plot(x.data(), y.data(), 2);
   f.plot(x.data(), y.data(), 2);
@@ -18,7 +18,7 @@ TEST_CASE("Default series colors cycle") {
 
 TEST_CASE("Explicit fluent color is respected") {
   Figure f(400, 200);
-  std::vector<f64> x{0, 1}, y{0, 1};
+  std::vector<double> x{0, 1}, y{0, 1};
   f.plot(x.data(), y.data(), 2).color(Color::red());
   f.plot(x.data(), y.data(), 2).color(Color::green());
   REQUIRE(f.entries().size() == 2);
@@ -28,7 +28,7 @@ TEST_CASE("Explicit fluent color is respected") {
 
 TEST_CASE("Explicit aggregate color is respected") {
   Figure f(400, 200);
-  std::vector<f64> x{0, 1}, y{0, 1};
+  std::vector<double> x{0, 1}, y{0, 1};
   f.plot(x.data(), y.data(), 2).data({.color = Color::orange()});
   f.plot(x.data(), y.data(), 2).data({.color = Color::purple()});
   REQUIRE(f.entries().size() == 2);
@@ -38,7 +38,7 @@ TEST_CASE("Explicit aggregate color is respected") {
 
 TEST_CASE("Explicit series do not shift the auto palette") {
   Figure f(400, 200);
-  std::vector<f64> x{0, 1}, y{0, 1};
+  std::vector<double> x{0, 1}, y{0, 1};
   f.plot(x.data(), y.data(), 2).color(Color::black());
   f.plot(x.data(), y.data(), 2); // auto
   f.plot(x.data(), y.data(), 2); // auto

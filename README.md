@@ -39,7 +39,7 @@ You can copy-paste `sepia.hpp` into your project. Sepia is single-header.
 
 int main() {
   const size_t N = 200;
-  std::vector<Sepia::f64> x(N), y(N);
+  std::vector<double> x(N), y(N);
   for (size_t i = 0; i < N; ++i) { // generate dummy data
     x[i] = static_cast<double>(i) * 0.05;
     y[i] = std::sin(x[i]);
@@ -188,7 +188,7 @@ Sepia offers three ownership models depending on your performance and lifetime n
 `Sepia::AlignedBuffer<T>` is a cache-line aligned (64-byte) contiguous buffer. Used internally for all owned data. SIMD-friendly.
 
 ```cpp
-Sepia::AlignedBuffer<sepia::f64> x(N), y(N);
+Sepia::AlignedBuffer<double> x(N), y(N);
 // Fill x, y...
 auto series = Sepia::data::Series(std::move(x), std::move(y));
 figure.plot(std::move(series));

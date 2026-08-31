@@ -4,7 +4,7 @@
 
 int main() {
   const size_t N = 200;
-  std::vector<Sepia::f64> x(N), y(N);
+  std::vector<double> x(N), y(N);
   for (size_t i = 0; i < N; ++i) {
     x[i] = static_cast<double>(i) * 0.05;
     y[i] = std::sin(x[i]);

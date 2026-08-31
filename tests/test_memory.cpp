@@ -5,21 +5,21 @@
 using namespace Sepia;
 
 TEST_CASE("AlignedBuffer 64-byte alignment") {
-    AlignedBuffer<f64> buf(100);
+    AlignedBuffer<double> buf(100);
     // posix_memalign called with Alignment=64
     CHECK(reinterpret_cast<uintptr_t>(buf.data()) % 64 == 0);
 }
 
 TEST_CASE("AlignedBuffer size and data non-null") {
-    AlignedBuffer<f64> buf(100);
+    AlignedBuffer<double> buf(100);
     CHECK(buf.size() == 100);
     CHECK(buf.data() != nullptr);
 }
 
 TEST_CASE("AlignedBuffer move constructor nulls source") {
-    AlignedBuffer<f64> a(50);
-    f64* original_ptr = a.data();
-    AlignedBuffer<f64> b(std::move(a));
+    AlignedBuffer<double> a(50);
+    double* original_ptr = a.data();
+    AlignedBuffer<double> b(std::move(a));
     CHECK(b.size() == 50);
     CHECK(b.data() == original_ptr);
     CHECK(a.size() == 0);
@@ -27,8 +27,8 @@ TEST_CASE("AlignedBuffer move constructor nulls source") {
 }
 
 TEST_CASE("AlignedBuffer move assignment nulls source") {
-    AlignedBuffer<f64> a(50);
-    AlignedBuffer<f64> b;
+    AlignedBuffer<double> a(50);
+    AlignedBuffer<double> b;
     b = std::move(a);
     CHECK(b.size() == 50);
     CHECK(a.size() == 0);
@@ -36,7 +36,7 @@ TEST_CASE("AlignedBuffer move assignment nulls source") {
 }
 
 TEST_CASE("AlignedBuffer operator[] write and read") {
-    AlignedBuffer<f64> buf(4);
+    AlignedBuffer<double> buf(4);
     buf[0] = 1.1; buf[1] = 2.2; buf[2] = 3.3; buf[3] = 4.4;
     CHECK(buf[0] == Catch::Approx(1.1));
     CHECK(buf[3] == Catch::Approx(4.4));

@@ -8,8 +8,8 @@ using namespace Sepia;
 using namespace Sepia::rendering;
 
 // Returns pointer to the first byte of pixel (x,y) in RGBA layout
-static const u8* px(const Canvas& c, int x, int y) {
-    return c.data() + (static_cast<usize>(y) * c.width() + static_cast<usize>(x)) * 4;
+static const std::uint8_t* px(const Canvas& c, int x, int y) {
+    return c.data() + (static_cast<std::size_t>(y) * c.width() + static_cast<std::size_t>(x)) * 4;
 }
 
 TEST_CASE("Canvas dimensions and stride") {
@@ -104,8 +104,8 @@ TEST_CASE("draw_text writes at least one non-background pixel") {
     Canvas c(100, 20);
     draw_text(c, "A", 0, 0, Color::black());
     bool found = false;
-    for (u32 y = 0; y < c.height() && !found; ++y)
-        for (u32 x = 0; x < c.width() && !found; ++x)
+    for (std::uint32_t y = 0; y < c.height() && !found; ++y)
+        for (std::uint32_t x = 0; x < c.width() && !found; ++x)
             if (px(c, static_cast<int>(x), static_cast<int>(y))[0] != 255u) found = true;
     CHECK(found);
 }
@@ -114,8 +114,8 @@ TEST_CASE("draw_text_vertical writes at least one non-background pixel") {
     Canvas c(20, 100);
     draw_text_vertical(c, "A", 0, 0, Color::black());
     bool found = false;
-    for (u32 y = 0; y < c.height() && !found; ++y)
-        for (u32 x = 0; x < c.width() && !found; ++x)
+    for (std::uint32_t y = 0; y < c.height() && !found; ++y)
+        for (std::uint32_t x = 0; x < c.width() && !found; ++x)
             if (px(c, static_cast<int>(x), static_cast<int>(y))[0] != 255u) found = true;
     CHECK(found);
 }
