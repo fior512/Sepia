@@ -428,6 +428,77 @@ public:
   }
 };
 
+// Bounded-memory streaming decimator: push chunks, keep at most target points, finish to a Series.
+// Per-x-bucket min-max decimation preserves spikes and keeps points spread across the x-range.
+template <typename T = typename scalar_traits<>::type>
+class StreamDecimator {
+public:
+  explicit StreamDecimator(std::size_t target_points)
+    : target_(std::max<std::size_t>(4, target_points))
+  {
+    keep_x_.reserve(target_);
+    keep_y_.reserve(target_);
+  }
+
+  void push(const T* x, const T* y, std::size_t n) {
+    const std::size_t step = target_;
+    for (std::size_t base = 0; base < n; base += step) {
+      const std::size_t cnt = std::min(step, n - base);
+      for (std::size_t i = 0; i < cnt; ++i) { keep_x_.push_back(x[base + i]); keep_y_.push_back(y[base + i]); }
+      if (keep_x_.size() > target_) compact();
+    }
+  }
+
+  Series<T> finish() {
+    if (keep_x_.size() > target_) compact();
+    AlignedBuffer<T> ox(keep_x_.size()), oy(keep_y_.size());
+    for (std::size_t i = 0; i < keep_x_.size(); ++i) { ox[i] = keep_x_[i]; oy[i] = keep_y_[i]; }
+    return Series<T>(std::move(ox), std::move(oy));
+  }
+
+private:
+  // Divide the x-range into equal slices, keep the min and max y in each slice.
+  void compact() {
+    const std::size_t n = keep_x_.size();
+    if (n <= target_) return;
+    const std::size_t buckets = std::max<std::size_t>(1, target_ / 2);
+    if (n <= buckets * 2) return;
+
+    std::vector<T> ox, oy;
+    ox.reserve(target_); oy.reserve(target_);
+    const double xmin = static_cast<double>(keep_x_.front());
+    const double xmax = static_cast<double>(keep_x_.back());
+    const double bw = (xmax - xmin) / static_cast<double>(buckets);
+
+    for (std::size_t b = 0; b < buckets; ++b) {
+      const double lo = xmin + static_cast<double>(b) * bw;
+      const double hi = (b + 1 == buckets) ? xmax + bw : xmin + static_cast<double>(b + 1) * bw;
+      std::size_t imin = n, imax = n;
+      for (std::size_t i = 0; i < n; ++i) {
+        const double xi = static_cast<double>(keep_x_[i]);
+        if (xi < lo || xi >= hi) continue;
+        if (imin == n || keep_y_[i] < keep_y_[imin]) imin = i;
+        if (imax == n || keep_y_[i] > keep_y_[imax]) imax = i;
+      }
+      if (imin == n) continue;
+      ox.push_back(keep_x_[imin]); oy.push_back(keep_y_[imin]);
+      if (imax != imin) { ox.push_back(keep_x_[imax]); oy.push_back(keep_y_[imax]); }
+    }
+
+    if (ox.size() > target_) { ox.resize(target_); oy.resize(target_); }
+    if (ox.empty()) { ox.push_back(keep_x_.front()); oy.push_back(keep_y_.front()); }
+    else if (ox.front() != keep_x_.front()) { ox.insert(ox.begin(), keep_x_.front()); oy.insert(oy.begin(), keep_y_.front()); }
+    if (ox.back() != keep_x_.back()) {
+      ox.push_back(keep_x_.back()); oy.push_back(keep_y_.back());
+      if (ox.size() > target_) { ox.pop_back(); oy.pop_back(); }
+    }
+    keep_x_.swap(ox); keep_y_.swap(oy);
+  }
+
+  std::size_t target_;
+  std::vector<T> keep_x_, keep_y_;
+};
+
 } // NS data
 
 // --- rendering: Canvas is semi-public; everything else is internal ----------------------------
