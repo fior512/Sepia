@@ -9,6 +9,12 @@
 using namespace Sepia;
 using namespace Sepia::plot2d;
 
+TEST_CASE("PerfParams defaults to lod enabled") {
+    params::PerfParams p;
+    CHECK(p.lod_enable == true);
+    CHECK(p.lod_target_points == 2000);
+}
+
 TEST_CASE("PlotCommand commits on destruction and forwards color and label") {
     Figure fig(600, 400);
     std::vector<double> x = {1, 2, 3}, y = {4, 5, 6};

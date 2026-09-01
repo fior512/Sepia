@@ -287,7 +287,7 @@ struct LayoutStyle {
 };
 
 struct PerfParams {
-  bool  lod_enable        = false;
+  bool  lod_enable        = true;
   std::size_t lod_target_points = 2000;
 };
 
